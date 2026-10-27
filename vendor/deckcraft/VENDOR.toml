@@ -1,0 +1,4 @@
+upstream = "https://github.com/storytold/deckcraft"
+sha = "aaf6c1c38aa6c59beda8110bd014cc6c96c6ec74"
+crates = ["model", "pptx", "geom", "color"]
+note = "root Cargo.toml: members rewritten to crates/*, default-members removed; dev-dependencies sections removed from crate manifests"

@@ -1,0 +1,4 @@
+upstream = "https://github.com/storytold/gridcraft"
+sha = "4eb2fb5c8ed30a580acf24234fffb2cb6256e335"
+crates = ["core", "formula", "numfmt", "functions", "model", "xlsx", "calc"]
+note = "root Cargo.toml: members rewritten to crates/*, default-members removed"

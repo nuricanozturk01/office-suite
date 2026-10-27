@@ -1,0 +1,9 @@
+target
+node_modules
+dist
+coverage
+.sqlx
+pnpm-lock.yaml
+openapi.json
+packages/api-client/src/schema.d.ts
+apps/web/public/apps

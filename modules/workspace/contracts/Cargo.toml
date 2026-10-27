@@ -1,0 +1,22 @@
+[package]
+name = "workspace-contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+identity-contracts.workspace = true
+serde.workspace = true
+shared-kernel.workspace = true
+thiserror.workspace = true
+time.workspace = true
+utoipa.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

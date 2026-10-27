@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO identity.outbox (id, event_type, payload, created_at)\n             VALUES ($1, 'ProfileUpdated', $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d8d55f8e6d0304f3fe2757aa55989ca7bfe778baffb345a3f7d7613f211c3614"
+}

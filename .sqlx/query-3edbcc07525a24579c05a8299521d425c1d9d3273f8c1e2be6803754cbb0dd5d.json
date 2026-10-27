@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO workspace.resources (id, title, title_at) VALUES ($1, $2, $3)\n                 ON CONFLICT (id) DO UPDATE SET\n                    title = CASE WHEN workspace.resources.title_at IS NULL\n                                   OR workspace.resources.title_at < EXCLUDED.title_at\n                                 THEN EXCLUDED.title ELSE workspace.resources.title END,\n                    title_at = GREATEST(workspace.resources.title_at, EXCLUDED.title_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3edbcc07525a24579c05a8299521d425c1d9d3273f8c1e2be6803754cbb0dd5d"
+}

@@ -1,0 +1,19 @@
+[package]
+name = "documents-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Adapter between ProseMirror JSON (Tiptap) and the vendored wordcraft engine (.docx import/export)"
+
+[dependencies]
+wordcraft-doc = { path = "../../../vendor/wordcraft/crates/doc" }
+wordcraft-docx = { path = "../../../vendor/wordcraft/crates/docx" }
+merge3.workspace = true
+serde_json.workspace = true
+storage-contracts.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

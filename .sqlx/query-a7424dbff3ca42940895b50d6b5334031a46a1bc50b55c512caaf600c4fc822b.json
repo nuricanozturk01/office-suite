@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE presentations.presentations SET deleted_at = $2, updated_at = $2\n             WHERE id = $1 AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a7424dbff3ca42940895b50d6b5334031a46a1bc50b55c512caaf600c4fc822b"
+}

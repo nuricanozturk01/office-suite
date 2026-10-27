@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO storage.packages\n                 (resource_id, name, bytes, updated_by, created_at, updated_at)\n             VALUES ($1, $2, $3, $4, $5, $5)\n             ON CONFLICT (resource_id) DO UPDATE\n                 SET name = $2, bytes = $3, version = storage.packages.version + 1,\n                     updated_by = $4, updated_at = $5\n                 WHERE $6::bigint IS NULL OR storage.packages.version = $6\n             RETURNING version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "storage.packages",
+            "name": "version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Uuid",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "82e03b81047ebc0c1c65a652bfe2ec13bcf7f76e4f6ce2e0dd85fb91c33bc3e1"
+}

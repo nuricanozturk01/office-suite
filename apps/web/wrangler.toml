@@ -1,0 +1,7 @@
+# Cloudflare Worker serving the static web build (apps/web/dist). Deployed by Workers Builds with Path = apps/web.
+name = "office-suite"
+compatibility_date = "2026-10-20"
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"

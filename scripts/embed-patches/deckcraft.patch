@@ -1,0 +1,559 @@
+diff --git a/apps/deckcraft-web/Cargo.toml b/apps/deckcraft-web/Cargo.toml
+index 7014421d..55d201cd 100644
+--- a/apps/deckcraft-web/Cargo.toml
++++ b/apps/deckcraft-web/Cargo.toml
+@@ -27,4 +27,4 @@ rfd = { workspace = true }
+ wasm-bindgen = "0.2"
+ wasm-bindgen-futures = "0.4"
+ js-sys = "0.3"
+-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "MessageEvent"] }
+diff --git a/apps/deckcraft-web/index.html b/apps/deckcraft-web/index.html
+index ca570df3..8a18ab1b 100644
+--- a/apps/deckcraft-web/index.html
++++ b/apps/deckcraft-web/index.html
+@@ -3,7 +3,7 @@
+ <head>
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+-  <title>DeckCraft</title>
++  <title>Slides</title>
+   <link data-trunk rel="rust" data-bin="deckcraft-web" data-wasm-opt="z" data-weak-refs />
+   <link data-trunk rel="icon" href="../../assets/app-icon/deckcraft.ico" />
+   <style>
+@@ -15,6 +15,6 @@
+ </head>
+ <body>
+   <canvas id="deckcraft_canvas"></canvas>
+-  <div id="deckcraft_loading">Loading DeckCraft&hellip;</div>
++  <div id="deckcraft_loading">Loading&hellip;</div>
+ </body>
+ </html>
+diff --git a/apps/deckcraft-web/src/host.rs b/apps/deckcraft-web/src/host.rs
+new file mode 100644
+index 00000000..b66057ec
+--- /dev/null
++++ b/apps/deckcraft-web/src/host.rs
+@@ -0,0 +1,131 @@
++//! The `postMessage` bridge to a same-origin parent page (`?host=parent`), for pages that embed
++//! DeckCraft in an `<iframe>` and keep its files. Same messages as WordCraft's bridge:
++//!
++//! - `deckcraft:ready` (to the parent): `{ version }`, the app is listening; send a file now.
++//! - `deckcraft:open` (from the parent): `{ name, bytes }`; it opens like a dropped file.
++//! - `deckcraft:save` (to the parent): `{ name, saveAs, bytes }` for every file DeckCraft would
++//!   otherwise download (Save, Save As, exports).
++//! - `deckcraft:dirty` (to the parent): `{ dirty }` whenever "has unsaved changes" flips.
++//! - `deckcraft:failed` (to the parent): `{ error }` when the app couldn't start.
++//!
++//! Only the parent window on the page's own origin is heard or answered.
++
++use std::cell::RefCell;
++use std::rc::Rc;
++
++use wasm_bindgen::JsCast as _;
++use wasm_bindgen::JsValue;
++use wasm_bindgen::closure::Closure;
++
++/// Files the parent sent, waiting for the app to open them.
++pub type Opens = Rc<RefCell<Vec<(String, Vec<u8>)>>>;
++
++#[derive(Clone)]
++pub struct Bridge {
++    window: web_sys::Window,
++    parent: web_sys::Window,
++    origin: String,
++}
++
++impl Bridge {
++    /// `None` when the page isn't framed by a page on its own origin.
++    pub fn new() -> Option<Self> {
++        let window = web_sys::window()?;
++        let parent = window.parent().ok().flatten()?;
++        if js_sys::Object::is(&parent, &window) {
++            return None;
++        }
++        let origin = window.location().origin().ok()?;
++        if origin == "null" || parent.location().origin().ok()? != origin {
++            return None;
++        }
++        Some(Self { window, parent, origin })
++    }
++
++    pub fn post_ready(&self) {
++        self.send(&[("type", "deckcraft:ready".into()), ("version", env!("CARGO_PKG_VERSION").into())]);
++    }
++
++    /// Hands a file-level command to the page; true when it was sent.
++    pub fn post_command(&self, command: &str) -> bool {
++        self.send(&[("type", "deckcraft:command".into()), ("command", command.into())])
++    }
++
++    /// Tells the page whether any open deck has unsaved changes; true when it was sent.
++    pub fn post_dirty(&self, dirty: bool) -> bool {
++        self.send(&[("type", "deckcraft:dirty".into()), ("dirty", dirty.into())])
++    }
++
++    /// Tells the page the user renamed the deck (set its title).
++    pub fn post_renamed(&self, name: &str) {
++        self.send(&[("type", "deckcraft:renamed".into()), ("name", name.into())]);
++    }
++
++    pub fn post_failed(&self, error: &str) {
++        self.send(&[("type", "deckcraft:failed".into()), ("error", error.into())]);
++    }
++
++    pub fn post_save(&self, path: &str, bytes: &[u8]) -> Result<(), String> {
++        let name = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string());
++        let buffer = js_sys::Uint8Array::from(bytes).buffer();
++        let message = message(&[
++            ("type", "deckcraft:save".into()),
++            ("name", name.as_str().into()),
++            ("saveAs", false.into()),
++            ("bytes", buffer.clone().into()),
++        ])
++        .ok_or_else(|| "couldn't build the message".to_string())?;
++        self.parent
++            .post_message_with_transfer(&message, &self.origin, &js_sys::Array::of1(&buffer))
++            .map_err(|e| e.as_string().unwrap_or_else(|| format!("{e:?}")))
++    }
++
++    /// Hear `deckcraft:open` from the parent and queue the file.
++    pub fn listen(&self, opens: Opens, ctx: egui::Context) {
++        let parent = self.parent.clone();
++        let origin = self.origin.clone();
++        let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
++            if event.origin() != origin || !event.source().is_some_and(|s| js_sys::Object::is(&s, &parent)) {
++                return;
++            }
++            let data = event.data();
++            if string(&data, "type").as_deref() != Some("deckcraft:open") {
++                return;
++            }
++            let name = string(&data, "name").filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "Presentation.pptx".to_string());
++            let Some(bytes) = bytes(&data) else { return };
++            opens.borrow_mut().push((name, bytes));
++            ctx.request_repaint();
++        });
++        if self.window.add_event_listener_with_callback("message", on_message.as_ref().unchecked_ref()).is_ok() {
++            on_message.forget();
++        }
++    }
++
++    fn send(&self, fields: &[(&str, JsValue)]) -> bool {
++        message(fields).is_some_and(|m| self.parent.post_message(&m, &self.origin).is_ok())
++    }
++}
++
++fn message(fields: &[(&str, JsValue)]) -> Option<js_sys::Object> {
++    let m = js_sys::Object::new();
++    for (key, value) in fields {
++        js_sys::Reflect::set(&m, &JsValue::from_str(key), value).ok()?;
++    }
++    Some(m)
++}
++
++fn string(data: &JsValue, key: &str) -> Option<String> {
++    js_sys::Reflect::get(data, &JsValue::from_str(key)).ok()?.as_string()
++}
++
++fn bytes(data: &JsValue) -> Option<Vec<u8>> {
++    let bytes = js_sys::Reflect::get(data, &JsValue::from_str("bytes")).ok()?;
++    if let Some(array) = bytes.dyn_ref::<js_sys::Uint8Array>() {
++        Some(array.to_vec())
++    } else if bytes.is_instance_of::<js_sys::ArrayBuffer>() {
++        Some(js_sys::Uint8Array::new(&bytes).to_vec())
++    } else {
++        None
++    }
++}
+diff --git a/apps/deckcraft-web/src/main.rs b/apps/deckcraft-web/src/main.rs
+index 6d2b7e94..9afc669c 100644
+--- a/apps/deckcraft-web/src/main.rs
++++ b/apps/deckcraft-web/src/main.rs
+@@ -18,6 +18,8 @@
+ #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+ #![forbid(unsafe_code)]
+ 
++#[cfg(target_arch = "wasm32")]
++mod host;
+ #[cfg(target_arch = "wasm32")]
+ mod web;
+ 
+diff --git a/apps/deckcraft-web/src/web.rs b/apps/deckcraft-web/src/web.rs
+index f8e68a35..9832a7bf 100644
+--- a/apps/deckcraft-web/src/web.rs
++++ b/apps/deckcraft-web/src/web.rs
+@@ -4,6 +4,8 @@ use deckcraft_engine::Session;
+ use deckcraft_ui_egui::{Inbox, InboxEvent, InboxFile, Services, SlideApp};
+ use wasm_bindgen::JsCast as _;
+ 
++use crate::host::{Bridge, Opens};
++
+ const PRESENTATION_EXTS: &[&str] = &["deckcraft", "pptx", "potx", "ppsx", "txt", "md"];
+ const PICTURE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"];
+ const AUDIO_EXTS: &[&str] = &["wav", "mp3", "m4a", "aac", "flac", "ogg", "opus", "aif", "aiff"];
+@@ -40,9 +42,24 @@ pub fn start() {
+                     }
+                     deckcraft_ui_egui::install_ime_pass_hooks(&cc.egui_ctx);
+                     let inbox: Inbox = Inbox::default();
+-                    let mut app = SlideApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone()));
++                    let opens = Opens::default();
++                    // `?host=parent`: a same-origin page framing DeckCraft opens its files and keeps what is saved.
++                    let bridge = if query_param_is("host", "parent") { Bridge::new() } else { None };
++                    let mut services = services(inbox.clone(), cc.egui_ctx.clone());
++                    if let Some(bridge) = &bridge {
++                        let save = bridge.clone();
++                        services.write = Some(Box::new(move |name: &str, bytes: &[u8]| save.post_save(name, bytes)));
++                        let save = bridge.clone();
++                        services.download = Some(Box::new(move |name: &str, bytes: &[u8]| {
++                            if let Err(e) = save.post_save(name, bytes) {
++                                log::error!("save of {name} failed: {e}");
++                            }
++                        }));
++                        bridge.listen(opens.clone(), cc.egui_ctx.clone());
++                    }
++                    let mut app = SlideApp::new(Session::new(), services);
+                     let q = query();
+-                    if !q.contains("blank") {
++                    if bridge.is_none() && !q.contains("blank") {
+                         if let Err(e) = deckcraft_engine::sample::open_sample(&mut app.session) {
+                             log::error!("sample deck: {e}");
+                         }
+@@ -52,7 +69,17 @@ pub fn start() {
+                     if q.contains("show") {
+                         app.start_show(0, false);
+                     }
+-                    Ok(Box::new(WebShell { app, inbox }))
++                    if let Some(bridge) = &bridge {
++                        let renamed = bridge.clone();
++                        app.services.on_renamed = Some(Box::new(move |name: &str| renamed.post_renamed(name)));
++                        // After the first `file.new` above: from here on New and Close belong to the page.
++                        let host = bridge.clone();
++                        app.services.host_command = Some(Box::new(move |id: &str| {
++                            ["file.new", "file.open", "file.close", "file.saveAs"].contains(&id) && host.post_command(id)
++                        }));
++                        bridge.post_ready();
++                    }
++                    Ok(Box::new(WebShell { app, inbox, opens, bridge, reported_dirty: None, opened_once: false }))
+                 }),
+             )
+             .await;
+@@ -65,6 +92,10 @@ pub fn start() {
+     });
+ }
+ 
++fn query_param_is(key: &str, value: &str) -> bool {
++    query().trim_start_matches('?').split('&').any(|pair| pair == format!("{key}={value}"))
++}
++
+ fn query() -> String {
+     web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default()
+ }
+@@ -74,12 +105,36 @@ fn query() -> String {
+ struct WebShell {
+     app: SlideApp,
+     inbox: Inbox,
++    opens: Opens,
++    bridge: Option<Bridge>,
++    /// Last unsaved-changes state sent to the page.
++    reported_dirty: Option<bool>,
++    /// A deck was opened already; later opens are refreshes.
++    opened_once: bool,
+ }
+ 
+ impl eframe::App for WebShell {
+     /// Delegate one eframe logic pass to the wrapped application.
+     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
++        let opened: Vec<_> = self.opens.borrow_mut().drain(..).collect();
++        for (name, bytes) in opened {
++            // A later open from the page is a refresh after somebody else saved: keep the user's slide.
++            let kept = self.opened_once.then(|| self.app.session.active().map(|d| d.selection.slide)).flatten();
++            self.app.open_or_insert_bytes(&name, &bytes);
++            if let Some(slide) = kept
++                && let Some(d) = self.app.session.active_mut()
++            {
++                d.selection.slide = slide.min(d.doc.slides.len().saturating_sub(1));
++            }
++            self.opened_once = true;
++        }
+         self.app.logic(ctx);
++        if let Some(bridge) = &self.bridge {
++            let dirty = self.app.session.documents().iter().any(|d| d.is_dirty());
++            if self.reported_dirty != Some(dirty) && bridge.post_dirty(dirty) {
++                self.reported_dirty = Some(dirty);
++            }
++        }
+     }
+ 
+     /// Consume browser drops with fresh input, capture the identity before the asynchronous read,
+diff --git a/crates/ui-egui/src/backstage.rs b/crates/ui-egui/src/backstage.rs
+index fd412028..4e24c186 100644
+--- a/crates/ui-egui/src/backstage.rs
++++ b/crates/ui-egui/src/backstage.rs
+@@ -254,6 +254,12 @@ fn colours(t: &Tokens) -> (Color32, Color32) {
+ /// leaves it as it is).
+ fn act(app: &mut SlideApp, nav: Nav, current: Page) -> Option<Page> {
+     match nav {
++        // Hosted by the page: Save As hands the deck to the page, which downloads a copy.
++        Nav::Page(Page::SaveAs) if app.services.host_command.as_ref().is_some_and(|host| host("file.saveAs")) => {
++            // The page asked for a copy; the deck follows right behind that message.
++            app.save_hosted();
++            Some(current)
++        }
+         Nav::Page(p) => Some(p),
+         Nav::Save => {
+             let web = app.services.pick_save.is_none() && app.services.download.is_some();
+@@ -334,7 +340,18 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
+     }
+     let (nav_bg, page_bg) = colours(&t);
+     let mut out = Outcome::default();
+-    let (top, bottom) = entries(has_doc);
++    // Framed by the page that keeps the files: no template gallery, the deck is already open.
++    let hosted = app.services.host_command.is_some();
++    if hosted && has_doc && matches!(bs.page, Page::Home | Page::New) {
++        if bs.page == Page::New {
++            let _ = app.run("file.new", json!({}));
++        }
++        bs.page = Page::Info;
++    }
++    let (mut top, bottom) = entries(has_doc);
++    if hosted && has_doc {
++        top.retain(|nav| !matches!(nav, Nav::Page(Page::Home)));
++    }
+     egui::Panel::left("backstage_nav").exact_size(NAV_W).resizable(false).frame(egui::Frame::NONE.fill(nav_bg)).show(ui, |ui| {
+         ui.spacing_mut().item_spacing.y = 0.0;
+         if has_doc {
+@@ -742,7 +759,6 @@ fn home(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcome)
+         });
+     }
+     ui.add_space(30.0);
+-    ui.hyperlink_to("Join the ArtCraft community on Discord", deckcraft_engine::links::DISCORD);
+ }
+ 
+ /// New: a blank presentation, then every theme and starter template, with a search box.
+@@ -1320,7 +1336,13 @@ fn export(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage) {
+                 ExportTask::FileType => {
+                     ui.label(RichText::new("Change File Type").font(theme::font(16.0)).color(t.text));
+                     ui.add_space(8.0);
+-                    for (id, label, detail) in SAVE_TYPES.iter().filter(|s| s.0 != "pdf") {
++                    // Hosted by the page (`?host=parent`): the `.pptx` is the file itself, which the page keeps
++                    // and offers as "Download to computer"; the other types are copies.
++                    let hosted = app.services.host_command.is_some();
++                    if hosted && bs.file_type == "pptx" {
++                        bs.file_type = "deckcraft";
++                    }
++                    for (id, label, detail) in SAVE_TYPES.iter().filter(|s| s.0 != "pdf" && !(hosted && s.0 == "pptx")) {
+                         let selected = bs.file_type == *id;
+                         let (rect, resp) = ui.allocate_exact_size(vec2(520.0, 46.0), Sense::click());
+                         resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, *label));
+@@ -1410,8 +1432,6 @@ fn account(app: &mut SlideApp, ui: &mut Ui) {
+             ) {
+                 let _ = app.run("app.about", json!({}));
+             }
+-            ui.hyperlink_to("Join our community on Discord", deckcraft_engine::links::DISCORD);
+-            ui.hyperlink_to("Source on GitHub", deckcraft_engine::links::GITHUB);
+         });
+     });
+ }
+diff --git a/crates/ui-egui/src/credits.rs b/crates/ui-egui/src/credits.rs
+index 0cef384b..724e3d23 100644
+--- a/crates/ui-egui/src/credits.rs
++++ b/crates/ui-egui/src/credits.rs
+@@ -257,7 +257,7 @@ pub fn contributors_ui(ui: &mut egui::Ui) {
+                     if i > 0 {
+                         ui.label(RichText::new("·").weak());
+                     }
+-                    ui.hyperlink_to(c.name(v.names), format!("https://github.com/{}", c.login)).on_hover_text(c.summary());
++                    ui.label(c.name(v.names)).on_hover_text(c.summary());
+                 }
+             });
+         }
+@@ -280,7 +280,7 @@ fn table(ui: &mut egui::Ui, list: &[&Contributor], v: &mut View) {
+         }
+         ui.end_row();
+         for c in list {
+-            ui.hyperlink_to(c.name(v.names), format!("https://github.com/{}", c.login)).on_hover_text(c.summary());
++            ui.label(c.name(v.names)).on_hover_text(c.summary());
+             ui.label(group(c.prs));
+             ui.label(group(c.commits));
+             ui.label(group(c.lines_added));
+diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
+index 4de8ffe1..cfc63187 100644
+--- a/crates/ui-egui/src/dialogs.rs
++++ b/crates/ui-egui/src/dialogs.rs
+@@ -2339,9 +2339,12 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                 d.params = json!({ "before": preferences_snapshot(app) });
+             }
+             ui.label(egui::RichText::new("General").font(theme::bold(13.0)));
+-            let mut dark = app.ui.brightness == theme::Brightness::Dark;
+-            if ui.checkbox(&mut dark, "Dark appearance").changed() {
+-                let _ = app.run("view.dark", json!({"on": dark}));
++            // Hosted by the page (`?host=parent`): its theme switch decides.
++            if app.services.host_command.is_none() {
++                let mut dark = app.ui.brightness == theme::Brightness::Dark;
++                if ui.checkbox(&mut dark, "Dark appearance").changed() {
++                    let _ = app.run("view.dark", json!({"on": dark}));
++                }
+             }
+             // While the pointer holds the slider its value only waits in the dialog: applying it
+             // would rescale the slider under the pointer and run it to an end (#767). It applies
+@@ -2875,9 +2878,6 @@ pub fn about(_app: &mut SlideApp, ui: &mut Ui) {
+         ui.label("Presentations and slide shows, rebuilt from scratch in pure Rust.");
+         ui.label("An open-source, clean-room project. Not affiliated with Microsoft.");
+         ui.add_space(6.0);
+-        ui.hyperlink_to("Join our community on Discord", deckcraft_engine::links::DISCORD);
+-        ui.hyperlink_to("getartcraft.com/apps/deckcraft", deckcraft_engine::links::APP_PAGE);
+-        ui.hyperlink_to("Source on GitHub", deckcraft_engine::links::GITHUB);
+         ui.add_space(6.0);
+         ui.label(egui::RichText::new("MIT OR Apache-2.0 · © 2026 ArtCraft Team and the DeckCraft contributors").size(11.0).color(t.text_faint));
+     });
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index 4c5a7a68..a1e2781e 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -254,6 +254,12 @@ pub struct Services {
+     pub open_async: Option<OpenAsyncFn>,
+     /// Hand bytes to the user as a named file (browser download).
+     pub download: Option<DownloadFn>,
++    /// Web, framed by a page that keeps the files (`?host=parent`): file-level commands (New, Close,
++    /// Save As) belong to that page, not to the app. Called with the command id before it runs;
++    /// returns true when the page took it over.
++    pub host_command: Option<Box<dyn Fn(&str) -> bool>>,
++    /// Web, framed by a page: told the new title when the user sets Info › Title.
++    pub on_renamed: Option<Box<dyn Fn(&str)>>,
+     pub inbox: Option<Inbox>,
+     /// Image on the system clipboard (PNG bytes), when the host can read one.
+     pub clipboard_image: Option<Box<dyn FnMut() -> Option<Vec<u8>>>>,
+@@ -954,11 +960,26 @@ impl SlideApp {
+     /// Run a command by id (UI commands here, everything else in the engine). Errors show in the
+     /// status bar and are returned.
+     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
++        if (matches!(id, "file.new" | "file.close")
++            || (id == "file.open" && params.as_object().is_none_or(serde_json::Map::is_empty)))
++            && let Some(host) = &self.services.host_command
++            && host(id)
++        {
++            return Ok(json!({}));
++        }
+         let r = if UI_COMMANDS.iter().any(|c| c.0 == id) {
+             self.run_ui(id, &params)
+         } else {
+             self.session.execute(id, &params).map_err(|e| e.to_string())
+         };
++        // Hosted by a page: tell it when the title is set, so its file list follows.
++        if r.is_ok()
++            && id == "file.properties"
++            && let Some(title) = params.get("title").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty())
++            && let Some(report) = &self.services.on_renamed
++        {
++            report(title);
++        }
+         match &r {
+             // Copy and Cut from the ribbon, menus, the slide's context menu or the control channel
+             // put the text on the system clipboard, as Ctrl+C and Ctrl+X do (#431).
+@@ -1727,6 +1748,13 @@ impl SlideApp {
+         let name = self.session.active().map(|d| d.title()).unwrap_or_else(|| "Presentation".into());
+         let ext = if format == "pptx" { "pptx" } else { "deckcraft" };
+         let suggested = format!("{name}.{ext}");
++        // Hosted by the page (`?host=parent`): a `.pptx` copy is also what the page keeps, so tell it
++        // to download this one (other formats are plain downloads already).
++        if ext == "pptx"
++            && let Some(host) = &self.services.host_command
++        {
++            host("file.saveAs");
++        }
+         if let Some(pick) = self.services.pick_save.as_mut() {
+             if let Some(path) = pick(&suggested) {
+                 match self.session.execute("file.saveAs", &json!({"path": path})) {
+@@ -1768,11 +1796,32 @@ impl SlideApp {
+                 Ok(_) => self.set_status("Saved"),
+                 Err(e) => self.set_status(e.to_string()),
+             }
++        } else if self.services.host_command.is_some() {
++            self.save_hosted();
+         } else {
+             self.save_as_dialog("deckcraft");
+         }
+     }
+ 
++    /// Framed by the page that keeps the files (`?host=parent`): the page gets the deck as `.pptx`
++    /// and the deck counts as saved, so the page's autosave and status stay in step.
++    pub(crate) fn save_hosted(&mut self) {
++        let Some(d) = self.session.active() else { return };
++        let name = format!("{}.pptx", d.title());
++        match deckcraft_engine::cmd::file::save_bytes(&d.doc, "pptx") {
++            Ok(bytes) => {
++                if let Some(download) = self.services.download.as_mut() {
++                    download(&name, &bytes);
++                }
++                if let Some(d) = self.session.active_mut() {
++                    d.saved_doc = d.doc.clone();
++                }
++                self.set_status("Saved");
++            }
++            Err(e) => self.set_status(e.to_string()),
++        }
++    }
++
+     /// Act on requests commands left for the UI.
+     fn drain_requests(&mut self) {
+         for r in std::mem::take(&mut self.session.ui_requests) {
+diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
+index cedd34c4..fe7eded8 100644
+--- a/crates/ui-egui/src/ribbon.rs
++++ b/crates/ui-egui/src/ribbon.rs
+@@ -105,16 +105,19 @@ pub fn title_bar(app: &mut SlideApp, ui: &mut Ui) {
+         if icon_toggle(&mut right, Icon::CommentsBubble, "Comments", has_doc, app.ui.pane.as_deref() == Some("comments")).clicked() {
+             let _ = app.run("view.pane", json!({"pane": "comments", "toggle": true}));
+         }
+-        if icon_toggle(
+-            &mut right,
+-            if app.ui.brightness == theme::Brightness::Dark { Icon::Sparkle } else { Icon::Palette },
+-            "Light/Dark appearance",
+-            true,
+-            false,
+-        )
+-        .clicked()
+-        {
+-            let _ = app.run("view.dark", json!({}));
++        // Hosted by the page (`?host=parent`): its theme switch decides (it answers `prefers-color-scheme`).
++        if app.services.host_command.is_none() {
++            if icon_toggle(
++                &mut right,
++                if app.ui.brightness == theme::Brightness::Dark { Icon::Sparkle } else { Icon::Palette },
++                "Light/Dark appearance",
++                true,
++                false,
++            )
++            .clicked()
++            {
++                let _ = app.run("view.dark", json!({}));
++            }
+         }
+     });
+ }
+@@ -2260,7 +2263,7 @@ fn record(app: &mut SlideApp, ui: &mut Ui) {
+     });
+     group(ui, |ui| {
+         if big_button(ui, Icon::Help, "Learn\nMore", true).clicked() {
+-            app.open_url(deckcraft_engine::links::APP_PAGE);
++            // no external page
+         }
+     });
+ }
+@@ -2411,9 +2414,12 @@ fn view(app: &mut SlideApp, ui: &mut Ui) {
+         if big_button_ex(ui, Icon::Grayscale, "Grayscale", true, false, gs).0.clicked() {
+             app.ui.grayscale = !gs;
+         }
+-        let dark = app.ui.brightness == theme::Brightness::Dark;
+-        if big_button_ex(ui, Icon::Palette, "Dark\nMode", true, false, dark).0.clicked() {
+-            let _ = app.run("view.dark", json!({}));
++        // Hosted by the page: its theme switch decides.
++        if app.services.host_command.is_none() {
++            let dark = app.ui.brightness == theme::Brightness::Dark;
++            if big_button_ex(ui, Icon::Palette, "Dark\nMode", true, false, dark).0.clicked() {
++                let _ = app.run("view.dark", json!({}));
++            }
+         }
+     });
+ }

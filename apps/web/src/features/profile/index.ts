@@ -1,0 +1,5 @@
+export { default as ProfileTab } from './ui/ProfileTab.vue'
+export { default as SecurityTab } from './ui/SecurityTab.vue'
+export { default as AppearanceTab } from './ui/AppearanceTab.vue'
+export { default as DataPrivacyTab } from './ui/DataPrivacyTab.vue'
+export { useProfile } from './api/use-profile-query'

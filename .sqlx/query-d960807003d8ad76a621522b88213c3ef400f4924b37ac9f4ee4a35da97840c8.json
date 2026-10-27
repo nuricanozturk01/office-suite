@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pdfs.pdfs\n             SET title = $2, updated_at = $3, version = version + 1\n             WHERE id = $1 AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d960807003d8ad76a621522b88213c3ef400f4924b37ac9f4ee4a35da97840c8"
+}

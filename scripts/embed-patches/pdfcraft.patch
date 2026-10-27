@@ -1,0 +1,386 @@
+diff --git a/apps/pdfcraft-web/index.html b/apps/pdfcraft-web/index.html
+index 46b3a25e..abeaa996 100644
+--- a/apps/pdfcraft-web/index.html
++++ b/apps/pdfcraft-web/index.html
+@@ -3,7 +3,7 @@
+   <head>
+     <meta charset="utf-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1" />
+-    <title>PdfCraft</title>
++    <title>PDF</title>
+     <link data-trunk rel="rust" data-wasm-opt="z" />
+     <style>
+       html, body { margin: 0; height: 100%; overflow: hidden; background: #f1f1f3; }
+diff --git a/apps/pdfcraft-web/src/main.rs b/apps/pdfcraft-web/src/main.rs
+index 73d14f4a..1b8ce0c7 100644
+--- a/apps/pdfcraft-web/src/main.rs
++++ b/apps/pdfcraft-web/src/main.rs
+@@ -69,6 +69,7 @@ fn main() {
+                         bridge.listen(app.startup_inbox.clone(), cc.egui_ctx.clone());
+                         app.host_save = Some(bridge.save_fn());
+                         app.host_dirty = Some(bridge.dirty_fn());
++                        app.host_command = Some(bridge.command_fn());
+                         bridge.post_ready();
+                     } else if query_param("host").as_deref() == Some("parent") {
+                         eframe::web_sys::console::warn_1(
+@@ -179,6 +180,14 @@ mod host {
+             }
+         }
+ 
++        /// Hands a file-level command (Open, Close) to the page; true when it was sent.
++        pub fn command_fn(&self) -> Box<dyn Fn(&str) -> bool> {
++            let bridge = self.clone();
++            Box::new(move |id: &str| {
++                message(&[("type", "pdfcraft:command".into()), ("command", id.into())]).is_some_and(|m| bridge.post(&m, None).is_ok())
++            })
++        }
++
+         /// The app couldn't start (no WebGL, for example): let the parent say so.
+         pub fn post_failed(&self, error: &str) {
+             if let Some(m) = message(&[("type", "pdfcraft:failed".into()), ("error", error.into())]) {
+diff --git a/crates/engine/src/commands.rs b/crates/engine/src/commands.rs
+index 1f25c23c..6d9412a2 100644
+--- a/crates/engine/src/commands.rs
++++ b/crates/engine/src/commands.rs
+@@ -393,10 +393,6 @@ pub const COMMANDS: &[CommandSpec] = &[
+     c("page.split", "Split document…", PAGES, None, Assembly, "scissors"),
+     c("page.number", "Number pages…", PAGES, None, Assembly, "hash"),
+     c("help.shortcuts", "Keyboard shortcuts", HELP, None, Nothing, "circle-help"),
+-    c("help.discord", "Join the ArtCraft Discord", HELP, None, Nothing, "messages-square"),
+-    c("help.app_page", "PdfCraft web page", HELP, None, Nothing, "globe"),
+-    c("help.github", "PdfCraft on GitHub", HELP, None, Nothing, "code-xml"),
+-    c("help.website", "ArtCraft website", HELP, None, Nothing, "external-link"),
+     c("help.check_updates", "Check for updates…", HELP, None, Nothing, "cloud"),
+     c("help.about", "About PdfCraft", HELP, None, Nothing, "info"),
+ ];
+diff --git a/crates/engine/src/links.rs b/crates/engine/src/links.rs
+index 9b1c4972..4c1a371f 100644
+--- a/crates/engine/src/links.rs
++++ b/crates/engine/src/links.rs
+@@ -23,12 +23,7 @@ pub struct Link {
+ }
+ 
+ /// In the order they are shown. Discord comes first: it is where people get help fastest.
+-pub const LINKS: &[Link] = &[
+-    Link { command: "help.discord", label: "Join the ArtCraft Discord", url: DISCORD, icon: "messages-square" },
+-    Link { command: "help.app_page", label: "PdfCraft web page", url: APP_PAGE, icon: "globe" },
+-    Link { command: "help.github", label: "PdfCraft on GitHub", url: GITHUB, icon: "code-xml" },
+-    Link { command: "help.website", label: "ArtCraft website", url: WEBSITE, icon: "external-link" },
+-];
++pub const LINKS: &[Link] = &[];
+ 
+ pub fn for_command(id: &str) -> Option<&'static Link> {
+     LINKS.iter().find(|l| l.command == id)
+diff --git a/crates/ui-egui/src/all_tools_ui.rs b/crates/ui-egui/src/all_tools_ui.rs
+index 9b09c887..ba08cc4b 100644
+--- a/crates/ui-egui/src/all_tools_ui.rs
++++ b/crates/ui-egui/src/all_tools_ui.rs
+@@ -78,7 +78,7 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
+                 let mut any = false;
+                 for category in TOOL_CATEGORIES {
+                     let found: Vec<_> =
+-                        category.groups.iter().filter_map(|id| catalog::group(id)).filter_map(|g| matches(&query, g).map(|m| (g, m))).collect();
++                        category.groups.iter().filter(|id| !(app.host_command.is_some() && crate::commands::hosted_hidden_group(id))).filter_map(|id| catalog::group(id)).filter_map(|g| matches(&query, g).map(|m| (g, m))).collect();
+                     if found.is_empty() {
+                         continue;
+                     }
+diff --git a/crates/ui-egui/src/chrome.rs b/crates/ui-egui/src/chrome.rs
+index b9771124..7fca12be 100644
+--- a/crates/ui-egui/src/chrome.rs
++++ b/crates/ui-egui/src/chrome.rs
+@@ -70,7 +70,7 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
+                     app.combine_tab.focused = false;
+                 }
+                 // Keep the two icon buttons, Discord's text/padding and three gaps outside the scrolling tabs.
+-                let controls_width = ui.fonts_mut(|f| f.layout_no_wrap("Discord".into(), theme::medium(13.0), t.text).size().x)
++                let controls_width = ui.fonts_mut(|f| f.layout_no_wrap("".into(), theme::medium(13.0), t.text).size().x)
+                     + 2.0 * button
+                     + 50.0
+                     + window_controls::width(&controls.right);
+@@ -283,29 +283,28 @@ pub fn tab_strip(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
+                         });
+                         ui.add_space(window_controls::SIDE_GAP - 4.0);
+                     }
+-                    let (icon, label) = match app.theme_preference {
+-                        ThemePreference::System => ("monitor", tl!("Use system setting")),
+-                        ThemePreference::Light => ("sun", tl!("Light gray")),
+-                        ThemePreference::Dark => ("moon", tl!("Dark gray")),
+-                    };
+-                    let tip = format!("{}: {label}", tl!("Display theme"));
+-                    let response = icons::button(ui, icon, button, false, &tip);
+-                    // A click cycles System, Light, Dark; a right-click opens the menu.
+-                    if response.clicked() {
+-                        app.execute(match app.theme_preference {
+-                            ThemePreference::System => "view.theme.light",
+-                            ThemePreference::Light => "view.theme.dark",
+-                            ThemePreference::Dark => "view.theme.system",
+-                        });
++                    // Hosted by the page (`?host=parent`): its theme switch decides (it answers `prefers-color-scheme`).
++                    if app.host_command.is_none() {
++                        let (icon, label) = match app.theme_preference {
++                            ThemePreference::System => ("monitor", tl!("Use system setting")),
++                            ThemePreference::Light => ("sun", tl!("Light gray")),
++                            ThemePreference::Dark => ("moon", tl!("Dark gray")),
++                        };
++                        let tip = format!("{}: {label}", tl!("Display theme"));
++                        let response = icons::button(ui, icon, button, false, &tip);
++                        // A click cycles System, Light, Dark; a right-click opens the menu.
++                        if response.clicked() {
++                            app.execute(match app.theme_preference {
++                                ThemePreference::System => "view.theme.light",
++                                ThemePreference::Light => "view.theme.dark",
++                                ThemePreference::Dark => "view.theme.system",
++                            });
++                        }
++                        egui::Popup::context_menu(&response).id(response.id.with("theme_menu")).show(|ui| appearance_menu(app, ui));
+                     }
+-                    egui::Popup::context_menu(&response).id(response.id.with("theme_menu")).show(|ui| appearance_menu(app, ui));
+                     if icons::button(ui, "circle-help", button, false, tl!("Keyboard shortcuts")).clicked() {
+                         app.dialog = Some(Dialog::Shortcuts);
+                     }
+-                    // One click to the community, from anywhere in the app.
+-                    if widgets::ghost_button_sized(ui, "messages-square", "Discord", tab_h).on_hover_text(pdfcraft_engine::links::DISCORD).clicked() {
+-                        app.execute("help.discord");
+-                    }
+                 });
+             });
+         });
+@@ -608,7 +607,9 @@ fn main_menu(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
+                         ui.separator();
+                     }
+                     crate::commands::registry_menu(app, ui, "View");
+-                    ui.menu_button(tl!("Display theme"), |ui| theme_menu(app, ui));
++                    if app.host_command.is_none() {
++                        ui.menu_button(tl!("Display theme"), |ui| theme_menu(app, ui));
++                    }
+                     ui.menu_button(tl!("Side panels"), |ui| {
+                         scroll_menu(ui, |ui| {
+                             for (p, label) in [
+diff --git a/crates/ui-egui/src/commands.rs b/crates/ui-egui/src/commands.rs
+index a27a25ff..4625708e 100644
+--- a/crates/ui-egui/src/commands.rs
++++ b/crates/ui-egui/src/commands.rs
+@@ -104,6 +104,24 @@ impl PdfCraftApp {
+     /// Last-resort guard (AGENTS.md §4): a command that panics is reported and the app, with its
+     /// open documents, keeps running. Edits are applied to a copy, so the document is unchanged.
+     pub fn execute(&mut self, id: &str) -> bool {
++        let unsaved = self.unsaved_flag.load(std::sync::atomic::Ordering::Relaxed);
++        if (id == "file.open" || (id == "file.close" && !unsaved))
++            && let Some(host) = &self.host_command
++            && host(id)
++        {
++            return true;
++        }
++        // Hosted by the page: Save as hands the file to the page, which downloads a copy
++        // (the page saves it in the cloud as well, so the two stay the same file).
++        if id == "file.save_as"
++            && let Some(host) = &self.host_command
++            && host("file.saveAs")
++        {
++            return true;
++        }
++        if self.host_command.is_some() && hosted_hidden(id) {
++            return true;
++        }
+         match pdfcraft_engine::guard(|| self.execute_unguarded(id)) {
+             Ok(done) => done,
+             Err(m) => {
+@@ -789,9 +807,23 @@ fn tab_after(current: Option<usize>, count: usize, forward: bool) -> Option<usiz
+     })
+ }
+ 
++/// Commands that open or create other documents. The page that hosts the editor keeps one file per
++/// editor, so there they are left out of menus and tool lists and do nothing.
++pub(crate) fn hosted_hidden(id: &str) -> bool {
++    id.starts_with("create.") || matches!(id, "page.combine" | "file.open_recent" | "file.pin_folder" | "file.close_all")
++}
++
++/// Tool groups (by catalogue id) made of such commands.
++pub(crate) fn hosted_hidden_group(id: &str) -> bool {
++    matches!(id, "create" | "combine")
++}
++
+ /// Render a top-level menu's registered commands (with live labels, shortcuts and enablement).
+ pub(crate) fn registry_menu(app: &mut PdfCraftApp, ui: &mut egui::Ui, menu: &str) {
+     for spec in commands::menu(menu) {
++        if app.host_command.is_some() && hosted_hidden(spec.id) {
++            continue;
++        }
+         let label = commands::current_label(spec, &app.session, app.active_ids().map(|(_, id)| id));
+         let label = crate::i18n::menu_label(spec.id, &label);
+         // Open Recent is a submenu of the live recent list, not one action: disabled while the
+diff --git a/crates/ui-egui/src/credits.rs b/crates/ui-egui/src/credits.rs
+index 4fe58a67..ff0d30ca 100644
+--- a/crates/ui-egui/src/credits.rs
++++ b/crates/ui-egui/src/credits.rs
+@@ -277,7 +277,7 @@ pub fn contributors_ui(ui: &mut egui::Ui) {
+                     if i > 0 {
+                         ui.label(RichText::new("·").color(t.text_faint));
+                     }
+-                    ui.hyperlink_to(c.name(v.names), format!("https://github.com/{}", c.login)).on_hover_text(c.summary());
++                    ui.label(c.name(v.names)).on_hover_text(c.summary());
+                 }
+             });
+         }
+@@ -304,7 +304,7 @@ fn table(ui: &mut egui::Ui, list: &[&Contributor], v: &mut View) {
+         }
+         ui.end_row();
+         for c in list {
+-            ui.hyperlink_to(c.name(v.names), format!("https://github.com/{}", c.login)).on_hover_text(c.summary());
++            ui.label(c.name(v.names)).on_hover_text(c.summary());
+             ui.label(group(c.prs));
+             ui.label(group(c.commits));
+             ui.label(group(c.lines_added));
+diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
+index b3437246..b1b4f13f 100644
+--- a/crates/ui-egui/src/dialogs.rs
++++ b/crates/ui-egui/src/dialogs.rs
+@@ -1330,9 +1330,8 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
+                     2 => crate::credits::models_ui(ui),
+                     _ => {
+                         ui.horizontal(|ui| {
+-                            widgets::artcraft_mark(ui, 40.0);
+                             ui.vertical(|ui| {
+-                                ui.label(egui::RichText::new("PdfCraft").font(theme::semibold(20.0)));
++                                ui.label(egui::RichText::new("PDF").font(theme::semibold(20.0)));
+                                 ui.label(crate::i18n::fmt(tl!("Version {v}"), &[("v", &pdfcraft_engine::build_info::version())]));
+                             });
+                         });
+@@ -1345,15 +1344,6 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
+                             .color(t.text_muted)
+                             .small(),
+                         );
+-                        ui.add_space(12.0);
+-                        ui.horizontal(|ui| {
+-                            ui.label(egui::RichText::new(tl!("Part of")).color(t.text_muted));
+-                            widgets::artcraft_logo(ui, 16.0);
+-                        });
+-                        ui.add_space(6.0);
+-                        if let Some(cmd) = widgets::community_links(ui) {
+-                            link_command = Some(cmd);
+-                        }
+                     }
+                 }
+             }
+diff --git a/crates/ui-egui/src/home.rs b/crates/ui-egui/src/home.rs
+index bfabf701..5cc6301e 100644
+--- a/crates/ui-egui/src/home.rs
++++ b/crates/ui-egui/src/home.rs
+@@ -30,34 +30,6 @@ pub fn show(app: &mut PdfCraftApp, ui: &mut egui::Ui) {
+                     .font(theme::regular(14.0)),
+             );
+             ui.add_space(14.0);
+-            if !app.community_card_closed {
+-                egui::Frame::NONE
+-                    .fill(t.card)
+-                    .stroke(Stroke::new(1.0, t.border))
+-                    .corner_radius(CornerRadius::same(12))
+-                    .inner_margin(egui::Margin::same(14))
+-                    .show(ui, |ui| {
+-                        ui.set_width(ui.available_width());
+-                        ui.horizontal(|ui| {
+-                            widgets::artcraft_mark(ui, 28.0);
+-                            ui.vertical(|ui| {
+-                                ui.label(egui::RichText::new(tl!("Join the ArtCraft community")).font(theme::semibold(15.0)));
+-                                ui.label(egui::RichText::new(tl!("Get help, share feedback and follow development on Discord.")).color(t.text_muted));
+-                            });
+-                            // Closed for this run only: the card is back on the next launch.
+-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+-                                if icons::button(ui, "x", 24.0, false, tl!("Close")).clicked() {
+-                                    app.community_card_closed = true;
+-                                }
+-                            });
+-                        });
+-                        ui.add_space(8.0);
+-                        if let Some(cmd) = widgets::community_links(ui) {
+-                            app.execute(cmd);
+-                        }
+-                    });
+-                ui.add_space(22.0);
+-            }
+ 
+             egui::Frame::NONE
+                 .fill(t.card)
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index 79f46bee..9c24751c 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -785,6 +785,9 @@ pub struct PdfCraftApp {
+     pub host_save: Option<HostSaveFn>,
+     /// Reports unsaved work to the embedding page (web, see [`HostDirtyFn`]).
+     pub host_dirty: Option<HostDirtyFn>,
++    /// Web, framed by a page that keeps the files: Open and Close belong to that page (its file
++    /// list), not to a disk. Called with the command id; true when the page took it over.
++    pub host_command: Option<Box<dyn Fn(&str) -> bool>>,
+     /// A pending "save changes?" question (closing a dirty tab or quitting).
+     pub close_request: Option<CloseRequest>,
+     /// The button of the "save changes?" question the keyboard has chosen; Save when it opens.
+@@ -1183,6 +1186,7 @@ impl PdfCraftApp {
+             os_events: None,
+             host_save: None,
+             host_dirty: None,
++            host_command: None,
+             close_request: None,
+             save_prompt_button: Default::default(),
+             save_prompt_seen: false,
+@@ -2200,6 +2204,12 @@ impl PdfCraftApp {
+     }
+ 
+     pub fn open_dialog(&mut self) {
++        // Framed by the page that keeps the files: Open is its file list, not a disk.
++        if let Some(host) = &self.host_command
++            && host("file.open")
++        {
++            return;
++        }
+         self.startup_superseded = true;
+         #[cfg(not(target_arch = "wasm32"))]
+         self.pick(
+diff --git a/crates/ui-egui/src/panels.rs b/crates/ui-egui/src/panels.rs
+index bcc4123f..36e8851c 100644
+--- a/crates/ui-egui/src/panels.rs
++++ b/crates/ui-egui/src/panels.rs
+@@ -75,8 +75,10 @@ fn all_tools(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
+     }
+     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+         ui.add_space(2.0);
+-        let shown = if app.all_tools_expanded { TOOL_GROUPS.len() } else { COLLAPSED_TOOLS.min(TOOL_GROUPS.len()) };
+-        for g in &TOOL_GROUPS[..shown] {
++        let hosted = app.host_command.is_some();
++        let groups: Vec<&ToolGroup> = TOOL_GROUPS.iter().filter(|g| !(hosted && crate::commands::hosted_hidden_group(g.id))).collect();
++        let shown = if app.all_tools_expanded { groups.len() } else { COLLAPSED_TOOLS.min(groups.len()) };
++        for g in &groups[..shown] {
+             if tool_row(ui, t, g).clicked() {
+                 app.select_tool(g.id);
+             }
+diff --git a/crates/ui-egui/src/widgets.rs b/crates/ui-egui/src/widgets.rs
+index 01cab033..2eb1d132 100644
+--- a/crates/ui-egui/src/widgets.rs
++++ b/crates/ui-egui/src/widgets.rs
+@@ -556,26 +556,6 @@ pub fn progress_notice(app: &PdfCraftApp, ctx: &egui::Context) -> bool {
+     cancel
+ }
+ 
+-/// The ArtCraft wordmark (Storyteller's brand, docs/brand/; not open source), sized to `height`.
+-pub fn artcraft_logo(ui: &mut egui::Ui, height: f32) -> Response {
+-    let dark = ui.visuals().dark_mode;
+-    let (uri, bytes): (&str, &'static [u8]) = if dark {
+-        ("bytes://artcraft-logo-white.svg", include_bytes!("../../../docs/brand/artcraft-logo-white.svg"))
+-    } else {
+-        ("bytes://artcraft-logo.svg", include_bytes!("../../../docs/brand/artcraft-logo.svg"))
+-    };
+-    ui.add(egui::Image::from_bytes(uri, bytes).max_height(height).alt_text("ArtCraft"))
+-}
+-
+-/// The ArtCraft mark (brand blue, works on light and dark), `size` points square.
+-pub fn artcraft_mark(ui: &mut egui::Ui, size: f32) -> Response {
+-    ui.add(
+-        egui::Image::from_bytes("bytes://artcraft-mark.svg", include_bytes!("../../../docs/brand/artcraft-mark.svg"))
+-            .fit_to_exact_size(vec2(size, size))
+-            .alt_text("ArtCraft"),
+-    )
+-}
+-
+ /// Buttons for every community link (`pdfcraft_engine::links`), Discord first and prominent.
+ /// Returns the registry command of the one clicked.
+ pub fn community_links(ui: &mut egui::Ui) -> Option<&'static str> {

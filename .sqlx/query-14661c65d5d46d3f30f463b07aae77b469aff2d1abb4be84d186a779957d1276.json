@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE spreadsheets.spreadsheets SET deleted_at = $2, updated_at = $2\n             WHERE id = $1 AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "14661c65d5d46d3f30f463b07aae77b469aff2d1abb4be84d186a779957d1276"
+}

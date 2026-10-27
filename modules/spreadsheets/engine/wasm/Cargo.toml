@@ -1,0 +1,39 @@
+[package]
+name = "spreadsheets-engine-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "WebAssembly build of the Sheets calculation session for the browser grid"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+js-sys.workspace = true
+serde_json.workspace = true
+spreadsheets-engine.workspace = true
+wasm-bindgen.workspace = true
+
+# ADR 0002: the `wasm-bindgen` macros expand to `unsafe` glue, so `unsafe_code` cannot be
+# `forbid` here. Hand-written code stays unsafe-free (`deny` with no `allow` of our own).
+# The rest mirrors `[workspace.lints]` (a crate cannot inherit the workspace table and change one entry).
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "deny"
+todo = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+module_name_repetitions = "allow"
+redundant_pub_crate = "allow"

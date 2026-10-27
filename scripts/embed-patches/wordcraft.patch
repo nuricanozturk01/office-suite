@@ -1,0 +1,525 @@
+diff --git a/apps/wordcraft-web/index.html b/apps/wordcraft-web/index.html
+index ca6ad469..0532115c 100644
+--- a/apps/wordcraft-web/index.html
++++ b/apps/wordcraft-web/index.html
+@@ -3,7 +3,7 @@
+ <head>
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+-  <title>WordCraft</title>
++  <title>Docs</title>
+   <link data-trunk rel="icon" href="../../assets/app-icon/wordcraft.ico" />
+   <link data-trunk rel="rust" data-bin="wordcraft-web" data-wasm-opt="z" data-weak-refs />
+   <style>
+@@ -15,6 +15,6 @@
+ </head>
+ <body>
+   <canvas id="wordcraft_canvas"></canvas>
+-  <div id="wordcraft_loading">Loading WordCraft&hellip;</div>
++  <div id="wordcraft_loading">Loading&hellip;</div>
+ </body>
+ </html>
+diff --git a/apps/wordcraft-web/src/host.rs b/apps/wordcraft-web/src/host.rs
+index 9307e0ed..ca7bdb90 100644
+--- a/apps/wordcraft-web/src/host.rs
++++ b/apps/wordcraft-web/src/host.rs
+@@ -18,6 +18,7 @@
+ //!   - Save As or Export to a format that doesn't (PDF, Markdown, plain text), Export as PDF and
+ //!     Export Page as PNG: `false`. They are copies; the document's file stays the same.
+ //! - `wordcraft:dirty` (to the parent): `{ dirty }` whenever unsaved changes appear or go away.
++//! - `wordcraft:renamed` (to the parent): `{ name }` when the user renames the document.
+ //! - `wordcraft:failed` (to the parent): `{ error }` when the app couldn't start.
+ //!
+ //! Only the parent window on the page's own origin is heard or answered. In host mode the parent
+@@ -75,6 +76,18 @@ impl Bridge {
+         // The browser's save picker is never used, so no save finishes later.
+         services.async_saves = None;
+         let bridge = self.clone();
++        services.host_command = Some(Box::new(move |id: &str| {
++            if ["file.new", "file.open", "file.close", "file.saveAs", "file.share"].contains(&id) {
++                bridge.send(&[("type", "wordcraft:command".into()), ("command", id.into())])
++            } else {
++                false
++            }
++        }));
++        let bridge = self.clone();
++        services.on_renamed = Some(Box::new(move |name: &str| {
++            bridge.send(&[("type", "wordcraft:renamed".into()), ("name", name.into())]);
++        }));
++        let bridge = self.clone();
+         let reported: Rc<Cell<Option<bool>>> = Rc::default();
+         services.on_dirty = Some(Box::new(move |dirty: bool| {
+             if reported.get() != Some(dirty) && bridge.send(&[("type", "wordcraft:dirty".into()), ("dirty", dirty.into())]) {
+diff --git a/crates/ui-egui/src/backstage.rs b/crates/ui-egui/src/backstage.rs
+index 64f16b4b..aaab7da6 100644
+--- a/crates/ui-egui/src/backstage.rs
++++ b/crates/ui-egui/src/backstage.rs
+@@ -21,6 +21,17 @@ const PAGES: [(&str, &str, &str); 11] = [
+     ("options", "Options", "options"),
+ ];
+ 
++/// Web, framed by the page that keeps the files: New and Save As belong to the page.
++fn host_handled(app: &WordApp, id: &str) -> bool {
++    let command = match id {
++        "new" => "file.new",
++        "open" => "file.open",
++        "saveAs" => "file.saveAs",
++        _ => return false,
++    };
++    app.services.host_command.as_ref().is_some_and(|host| host(command))
++}
++
+ /// The Backstage back chevron's centre on macOS (#1873): beside the traffic lights in a
+ /// window (the title bar's content edge), at the plain control inset in full screen, where the
+ /// lights aren't docked top-left and the reserved offset would leave dead space.
+@@ -35,6 +46,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+     let t = Tokens::get(ui.ctx());
+     // No document open (#1129): only the pages that open or create one, and Options.
+     let has_document = app.has_document();
++    // Framed by the page that keeps the files: no template gallery, the document is already open.
++    if app.services.host_command.is_some() && app.ui.backstage_page == "home" {
++        app.ui.backstage_page = "info".into();
++    }
+     if !has_document && !works_without_document(&app.ui.backstage_page) {
+         app.ui.backstage_page = "home".into();
+     }
+@@ -75,6 +90,9 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+             }
+             ui.add_space(if mac { 12.0 } else { 6.0 });
+             for (id, label, icon) in PAGES {
++                if matches!(id, "recover" | "home") && app.services.host_save.is_some() {
++                    continue;
++                }
+                 // No document open (#1129): Info, Save, Save As, Print and Export are greyed out.
+                 let on = has_document || works_without_document(id);
+                 let (r, resp) = ui.add_enabled_ui(on, |ui| ui.allocate_exact_size(vec2(200.0, 38.0), Sense::click())).inner;
+@@ -94,7 +112,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+                     if active { semibold(14.0) } else { medium(14.0) },
+                     ink,
+                 );
+-                if resp.clicked() {
++                if resp.clicked() && !host_handled(app, id) {
+                     match id {
+                         // A document without a file goes to the Save As page (as in Word) instead
+                         // of `file.save`, which would also open the native Save As dialog.
+@@ -124,7 +142,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+                 }
+             }
+             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+-                for (label, id) in [("About", "about"), ("Discord community", "discord")] {
++                for (label, id) in [("About", "about")] {
+                     let (r, resp) = ui.allocate_exact_size(vec2(200.0, 32.0), Sense::click());
+                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), tl!(label)));
+                     if resp.hovered() {
+@@ -665,24 +683,28 @@ fn info_page(app: &mut WordApp, ui: &mut Ui) {
+         {
+             let _ = app.run("ui.dialog", json!({"name": "customProperties"}));
+         }
+-        // Protect Document › Encrypt with Password (#55).
+-        ui.add_space(18.0);
+-        ui.label(egui::RichText::new(tl!("Protect Document")).font(semibold(15.0)));
+-        let encrypted = info.get("encrypted").and_then(|v| v.as_bool()).unwrap_or(false);
+-        ui.label(if encrypted {
+-            tl!("A password is required to open this document.")
+-        } else {
+-            tl!("Anyone can open this document. Encrypt it with a password to keep it private.")
+-        });
+-        ui.horizontal(|ui| {
+-            let label = if encrypted { tl!("Change Password…") } else { tl!("Encrypt with Password…") };
+-            if ui.button(egui::RichText::new(label).font(medium(13.5))).clicked() {
+-                let _ = app.run("file.encrypt", json!({}));
+-            }
+-            if encrypted && ui.button(egui::RichText::new(tl!("Remove Password")).font(medium(13.5))).clicked() {
+-                let _ = app.run("file.encrypt", json!({"password": null}));
+-            }
+-        });
++        // Hosted by the page (`?host=parent`): no password protection. The page keeps the file and
++        // converts it on the server, and a lost password cannot be recovered.
++        if app.services.host_command.is_none() {
++            // Protect Document › Encrypt with Password (#55).
++            ui.add_space(18.0);
++            ui.label(egui::RichText::new(tl!("Protect Document")).font(semibold(15.0)));
++            let encrypted = info.get("encrypted").and_then(|v| v.as_bool()).unwrap_or(false);
++            ui.label(if encrypted {
++                tl!("A password is required to open this document.")
++            } else {
++                tl!("Anyone can open this document. Encrypt it with a password to keep it private.")
++            });
++            ui.horizontal(|ui| {
++                let label = if encrypted { tl!("Change Password…") } else { tl!("Encrypt with Password…") };
++                if ui.button(egui::RichText::new(label).font(medium(13.5))).clicked() {
++                    let _ = app.run("file.encrypt", json!({}));
++                }
++                if encrypted && ui.button(egui::RichText::new(tl!("Remove Password")).font(medium(13.5))).clicked() {
++                    let _ = app.run("file.encrypt", json!({"password": null}));
++                }
++            });
++        }
+         let ui = &mut cols[1];
+         ui.label(egui::RichText::new(tl!("Statistics")).font(semibold(15.0)));
+         for (l, k) in [("Pages", "pages"), ("Words", "words"), ("Paragraphs", "paragraphs"), ("Sections", "sections"), ("Comments", "comments")] {
+diff --git a/crates/ui-egui/src/canvas.rs b/crates/ui-egui/src/canvas.rs
+index 9b9e4747..bde09705 100644
+--- a/crates/ui-egui/src/canvas.rs
++++ b/crates/ui-egui/src/canvas.rs
+@@ -1205,6 +1205,17 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+         app.session.page_hint = c.page;
+     }
+     let mut scroll_target: Option<Rect> = None;
++    // Hosted refresh: put the view back where the user left it, once the new layout is tall enough.
++    if let Some((want, left)) = app.restore_scroll {
++        app.canvas.scroll_to_caret = false;
++        if app.canvas.scroll_max.y + 1.0 >= want.y || left == 0 {
++            app.canvas.scroll_request = Some(want);
++            app.restore_scroll = None;
++        } else {
++            app.restore_scroll = Some((want, left - 1));
++            ui.ctx().request_repaint();
++        }
++    }
+     if app.canvas.nav_to_caret {
+         app.canvas.read_target_page = None;
+         if let Some(c) = caret
+diff --git a/crates/ui-egui/src/chrome.rs b/crates/ui-egui/src/chrome.rs
+index b7e7c811..17c22a3a 100644
+--- a/crates/ui-egui/src/chrome.rs
++++ b/crates/ui-egui/src/chrome.rs
+@@ -303,6 +303,8 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
+             let mut right_start = full.max.x;
+             ui.horizontal_centered(|ui| {
+                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
++                // The page that keeps the files saves for the user; there is no file to AutoSave.
++                if app.services.host_save.is_none() {
+                 // AutoSave switch: greyed out, with the reason as its tooltip, when AutoSave can't
+                 // cover the document (#196, #176); clicking it then offers Save As where that helps.
+                 let block = app.autosave_block();
+@@ -339,6 +341,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
+                         Some(b) => app.status(b.reason()),
+                     }
+                 }
++                }
+                 ui.add_space(8.0);
+                 // Hidden (#1945): neither the buttons nor the … menu; the title centres as before.
+                 if app.ui.quick_access_toolbar {
+@@ -356,22 +359,6 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
+                         let _ = app.run("ui.backstage", json!({"value": true, "page": "options", "pane": "general"}));
+                     }
+                     ui.add_space(8.0);
+-                    if app.ui.show_discord {
+-                        let (r, resp) = ui.allocate_exact_size(vec2(84.0, 22.0), Sense::click());
+-                        ui.painter().rect_filled(r, 11.0, if resp.hovered() { t.accent_text } else { t.accent });
+-                        icons::paint(
+-                            ui.painter(),
+-                            Rect::from_center_size(pos2(r.min.x + 13.0, r.center().y), vec2(14.0, 14.0)),
+-                            "discord",
+-                            t.on_accent,
+-                            t.on_accent,
+-                        );
+-                        ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, tl!("Discord"), medium(11.5), t.on_accent);
+-                        if resp.on_hover_text(tl!("Join the ArtCraft community on Discord")).clicked() {
+-                            let _ = app.run("ui.discord", json!({}));
+-                        }
+-                        ui.add_space(8.0);
+-                    }
+                     search_box(app, ui, control_h);
+                     right_start = ui.min_rect().min.x;
+                 });
+diff --git a/crates/ui-egui/src/credits.rs b/crates/ui-egui/src/credits.rs
+index be72aa33..4e792f20 100644
+--- a/crates/ui-egui/src/credits.rs
++++ b/crates/ui-egui/src/credits.rs
+@@ -260,7 +260,7 @@ pub fn contributors_ui(ui: &mut egui::Ui) {
+                     if i > 0 {
+                         ui.label(RichText::new("·").weak());
+                     }
+-                    ui.hyperlink_to(c.name(v.names), format!("https://github.com/{}", c.login)).on_hover_text(c.summary());
++                    ui.label(c.name(v.names)).on_hover_text(c.summary());
+                 }
+             });
+         }
+@@ -283,7 +283,7 @@ fn table(ui: &mut egui::Ui, list: &[&Contributor], v: &mut View) {
+         }
+         ui.end_row();
+         for c in list {
+-            ui.hyperlink_to(c.name(v.names), format!("https://github.com/{}", c.login)).on_hover_text(c.summary());
++            ui.label(c.name(v.names)).on_hover_text(c.summary());
+             ui.label(group(c.prs));
+             ui.label(group(c.commits));
+             ui.label(group(c.lines_added));
+diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
+index a464e03e..a1d779ea 100644
+--- a/crates/ui-egui/src/dialogs.rs
++++ b/crates/ui-egui/src/dialogs.rs
+@@ -2893,16 +2893,13 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                 1 => crate::credits::contributors_ui(ui),
+                 2 => crate::credits::models_ui(ui),
+                 _ => {
+-                    ui.label(egui::RichText::new(tl!("WordCraft")).font(semibold(22.0)));
++                    ui.label(egui::RichText::new("Docs").font(semibold(22.0)));
+                     let build = option_env!("WORDCRAFT_BUILD_SHA").map(|s| s.get(..8).unwrap_or(s)).unwrap_or(tl!("development build"));
+                     ui.label(crate::i18n::fmt(tl!("Version {version} ({build})"), &[("version", env!("CARGO_PKG_VERSION")), ("build", build)]));
+                     ui.label(tl!(
+-                        "A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team."
++                        "A free, open-source word processor written from scratch in Rust."
+                     ));
+                     ui.add_space(6.0);
+-                    ui.hyperlink_to(tl!("getartcraft.com/apps/wordcraft"), "https://getartcraft.com/apps/wordcraft");
+-                    ui.hyperlink_to(tl!("Join us on Discord: discord.gg/artcraft"), "https://discord.gg/artcraft");
+-                    ui.hyperlink_to(tl!("Source code: github.com/storytold/wordcraft"), "https://github.com/storytold/wordcraft");
+                     ui.add_space(6.0);
+                     ui.label(
+                         egui::RichText::new(tl!("MIT OR Apache-2.0. Copyright (c) 2026 ArtCraft Team and the WordCraft contributors."))
+diff --git a/crates/ui-egui/src/keytips.rs b/crates/ui-egui/src/keytips.rs
+index a874e215..593a5e90 100644
+--- a/crates/ui-egui/src/keytips.rs
++++ b/crates/ui-egui/src/keytips.rs
+@@ -390,7 +390,7 @@ fn controls(tab: &str) -> Vec<Control> {
+             c("Full Screen", "view.fullScreen"),
+             c("Macros", "tools.macros"),
+         ],
+-        "Help" => vec![d("Help", "about"), c("Community Discord", "ui.discord"), d("Commands", "commands")],
++        "Help" => vec![d("Help", "about"), d("Commands", "commands")],
+         "Table Design" => {
+             vec![m("Shading", "table.shading"), m("Borders", "table.borders"), c("Border Painter", "table.borderPainter")]
+         }
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index dca58282..a4959f48 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -144,6 +144,13 @@ pub struct Services {
+     /// Web: told whether the document has unsaved changes after each pass, for the browser's
+     /// leave-page guard (`beforeunload` runs between frames and can't ask the app).
+     pub on_dirty: Option<Box<dyn Fn(bool)>>,
++    /// Web, framed by a page: told the new name when the user renames the document (File › rename,
++    /// or Info › Title).
++    pub on_renamed: Option<Box<dyn Fn(&str)>>,
++    /// Web, framed by a page that keeps the files (`?host=parent`): file-level commands (New, Close,
++    /// Save As) belong to that page, not to the app. Called with the command id before it runs;
++    /// returns true when the page took it over.
++    pub host_command: Option<Box<dyn Fn(&str) -> bool>>,
+     /// Web: hand PDF bytes to the browser's print dialog (no download or intermediate file).
+     /// Desktop uses `print_native` instead. An error means nothing was opened.
+     pub print: Option<Box<dyn Fn(&[u8]) -> Result<(), String>>>,
+@@ -723,6 +730,12 @@ pub struct WordApp {
+     /// between, such as an Undo, starts a new one).
+     pub(crate) info_editing: Option<(&'static str, u64)>,
+     recovery_seen: bool,
++    /// Hosted by a page (`?host=parent`): a document was opened already, so a later open (the page
++    /// refreshing the file after somebody else saved) keeps this user's place.
++    hosted_opened: bool,
++    /// Where to scroll the refreshed document to, and how many frames to keep trying (the new
++    /// layout is not tall enough on its first frames).
++    restore_scroll: Option<(egui::Vec2, u8)>,
+     /// Started on the Start screen with nothing to open (#1129): the id of the placeholder
+     /// blank document the session holds until the user creates or opens one. While it is still
+     /// the session's document, no document is open: the window shows no page and only the File
+@@ -876,6 +889,8 @@ impl WordApp {
+             saves_in_flight: Vec::new(),
+             font_generation: wordcraft_fonts::FontDb::global().generation(),
+             recovery_seen: false,
++            hosted_opened: false,
++            restore_scroll: None,
+             no_document: None,
+             comment_drafts: Default::default(),
+             parked: Default::default(),
+@@ -1057,6 +1072,13 @@ impl WordApp {
+     /// Close, Envelopes, Labels and Finish & Merge on a document with unsaved changes first ask
+     /// Save / Don't Save / Cancel, and the command runs once that is answered (`ui.saveChanges`).
+     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
++        if (matches!(id, "file.new" | "file.close" | "file.share")
++            || (id == "file.open" && params.as_object().is_none_or(serde_json::Map::is_empty)))
++            && let Some(host) = &self.services.host_command
++            && host(id)
++        {
++            return Ok(json!({}));
++        }
+         // Comment text still being typed is written first, so a save or export has it and a
+         // close, New or Open counts it as a change (#1348). A draft the document refuses is not
+         // part of it: saving and exporting go on without it (the refusal stays on the status
+@@ -1103,7 +1125,18 @@ impl WordApp {
+             return r;
+         }
+         let applied = applied_font(id, &params);
++        let new_title = (id == "file.properties").then(|| params.get("title").and_then(Value::as_str).map(str::to_owned)).flatten();
+         let r = self.execute_user(id, params);
++        // Hosted by a page: tell it when the document is renamed here, so its file list follows.
++        if r.is_ok()
++            && let Some(report) = &self.services.on_renamed
++        {
++            match (id, new_title) {
++                ("file.rename", _) => report(&self.title_stem()),
++                (_, Some(title)) if !title.trim().is_empty() => report(title.trim()),
++                _ => {}
++            }
++        }
+         // A save error already on the status line is the reason to see; the refusal shows otherwise.
+         if let (Some(e), true) = (refused, r.is_ok()) {
+             self.status(e);
+@@ -2064,7 +2097,6 @@ impl WordApp {
+                 ));
+             }
+             "ui.discord" => {
+-                self.canvas.open_url = Some("https://discord.gg/artcraft".into());
+                 json!({})
+             }
+             "ui.caretAnimation" => {
+@@ -3110,7 +3142,21 @@ impl WordApp {
+                 placed_picture = Self::placed_in_text(&r);
+                 r
+             } else {
+-                self.run("file.open", json!({"path": name, "data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}))
++                // A later open from the hosting page is a refresh: keep the user's view and caret.
++                let kept = (self.services.host_command.is_some() && self.hosted_opened)
++                    .then(|| (self.session.sel.clone(), self.session.view.clone(), self.canvas.scroll_offset));
++                let r = self.run("file.open", json!({"path": name, "data": wordcraft_engine::cmd::insert::base64_encode(&bytes)}));
++                if r.is_ok() {
++                    if let Some((sel, view, scroll)) = kept {
++                        self.session.view = view;
++                        self.session.sel = sel;
++                        self.session.clamp_selection();
++                        self.canvas.scroll_to_caret = false;
++                        self.restore_scroll = Some((scroll, 60));
++                    }
++                    self.hosted_opened = true;
++                }
++                r
+             };
+             if r.is_ok() {
+                 self.ui.backstage = false;
+diff --git a/crates/ui-egui/src/options.rs b/crates/ui-egui/src/options.rs
+index f9661b37..a7542f9c 100644
+--- a/crates/ui-egui/src/options.rs
++++ b/crates/ui-egui/src/options.rs
+@@ -210,7 +210,10 @@ fn flag(app: &mut WordApp, ui: &mut Ui, label: &str, key: &str, value: bool) {
+ /// default apps; the Start screen; and personalization such as user name and initials.
+ fn general(app: &mut WordApp, ui: &mut Ui) {
+     section(ui, "Interface");
+-    theme_picker(app, ui);
++    // Hosted by the page: its theme switch decides (the page answers `prefers-color-scheme`).
++    if app.services.host_command.is_none() {
++        theme_picker(app, ui);
++    }
+     interface_size_picker(app, ui);
+     ui.checkbox(&mut app.ui.mini_toolbar, tl!("Show the mini toolbar when text is selected"));
+     let mut dark_page = app.session.view.dark_mode;
+@@ -221,21 +224,23 @@ fn general(app: &mut WordApp, ui: &mut Ui) {
+     {
+         let _ = app.run("view.darkMode", json!({"value": dark_page}));
+     }
+-    ui.checkbox(&mut app.ui.show_discord, tl!("Show the community button in the title bar"));
+     default_app_button(app, ui);
+     ui.add_space(8.0);
+-    section(ui, "Start-up");
+-    let mut start = app.ui.start_screen;
+-    if ui
+-        .checkbox(&mut start, tl!("Show the Start screen when WordCraft starts"))
+-        .on_hover_text(tl!(
+-            "On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document."
+-        ))
+-        .changed()
+-    {
+-        let _ = app.run("ui.startScreen", json!({"value": start}));
++    // Hosted by the page: there is no Start screen (File › Home is hidden).
++    if app.services.host_command.is_none() {
++        section(ui, "Start-up");
++        let mut start = app.ui.start_screen;
++        if ui
++            .checkbox(&mut start, tl!("Show the Start screen when WordCraft starts"))
++            .on_hover_text(tl!(
++                "On: WordCraft opens on File › Home, with a blank document, the templates and your recent documents. Off: it opens a blank document."
++            ))
++            .changed()
++        {
++            let _ = app.run("ui.startScreen", json!({"value": start}));
++        }
++        ui.add_space(8.0);
+     }
+-    ui.add_space(8.0);
+     section(ui, "Personalize");
+     egui::Grid::new("options_user").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
+         let user_label = ui.label(tl!("User name:"));
+diff --git a/crates/ui-egui/src/print_page.rs b/crates/ui-egui/src/print_page.rs
+index fa8b7c2a..1f4e8480 100644
+--- a/crates/ui-egui/src/print_page.rs
++++ b/crates/ui-egui/src/print_page.rs
+@@ -188,11 +188,14 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+                 } else {
+                     ui.label(tl!("Save a copy in another format. Printing goes through a PDF you can print from any viewer."));
+                 }
+-                if ui
+-                    .add(egui::Button::new(egui::RichText::new(tl!("Save these pages as PDF…")).font(medium(13.5))).min_size(vec2(320.0, 34.0)))
+-                    .clicked()
+-                {
+-                    app.print_pdf_dialog();
++                // Hosted by the page (`?host=parent`): there is no save dialog; File › Export › PDF does it.
++                if app.services.host_command.is_none() {
++                    if ui
++                        .add(egui::Button::new(egui::RichText::new(tl!("Save these pages as PDF…")).font(medium(13.5))).min_size(vec2(320.0, 34.0)))
++                        .clicked()
++                    {
++                        app.print_pdf_dialog();
++                    }
+                 }
+                 ui.add_space(6.0);
+ 
+@@ -365,6 +368,11 @@ pub fn export_formats(app: &mut WordApp, ui: &mut Ui) {
+         ("Plain text (*.txt)", "txt"),
+         ("Page image (*.png)", "png"),
+     ] {
++        // Hosted by the page (`?host=parent`): "Word document" is the file itself, which the page
++        // stores and offers as "Download to computer"; exporting it again would only save it.
++        if ext == "docx" && app.services.host_command.is_some() {
++            continue;
++        }
+         if ui.add(egui::Button::new(egui::RichText::new(tl!(label)).font(medium(13.5))).min_size(vec2(320.0, 34.0))).clicked() {
+             app.export_dialog(ext);
+         }
+diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
+index eb3366e7..fb2ad6f1 100644
+--- a/crates/ui-egui/src/ribbon.rs
++++ b/crates/ui-egui/src/ribbon.rs
+@@ -296,6 +296,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+     let user_tabs = app.session.ribbon.tabs().into_owned();
+     let mut tabs: Vec<(String, bool)> = vec![("File".to_string(), false)];
+     tabs.extend(user_tabs.iter().filter(|e| !e.hidden).map(|e| (e.name.clone(), e.custom)));
++    // Zotero needs its desktop app on the same machine; a browser can't reach it.
++    if cfg!(target_arch = "wasm32") {
++        tabs.retain(|(name, _)| name != "Zotero");
++    }
+     for ct in contextual_tabs(&app.session) {
+         if ct == "Outlining" {
+             tabs.insert(1.min(tabs.len()), (ct.to_string(), false));
+@@ -370,7 +374,11 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
+                         }
+                         resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, share));
+                         if resp.on_hover_text(tl!("Export a copy to share (PDF, Word document)")).clicked() {
+-                            let _ = app.run("ui.backstage", json!({"value": true, "page": "export"}));
++                            // Hosted by the page (`?host=parent`): Share opens the page's sharing dialog.
++                            let hosted = app.run("file.share", json!({})).is_ok() && app.services.host_command.is_some();
++                            if !hosted {
++                                let _ = app.run("ui.backstage", json!({"value": true, "page": "export"}));
++                            }
+                         }
+                         ui.add_space(6.0);
+                         let track = app.session.doc.settings.track_changes;
+@@ -2442,7 +2450,6 @@ fn help(app: &mut WordApp, ui: &mut Ui) {
+     group(ui, "Help", None, app, |ui, app| {
+         big(ui, app, "help", "Help", "ui.dialog", json!({"name": "about"}), false);
+         big(ui, app, "checkForUpdates", "Check for\nUpdates…", "ui.checkForUpdates", json!({}), false);
+-        big(ui, app, "discord", "Community\nDiscord", "ui.discord", json!({}), false);
+     });
+     group(ui, "Agents", None, app, |ui, app| {
+         big(ui, app, "macros", "Commands", "ui.dialog", json!({"name": "commands"}), false);
+diff --git a/crates/ui-egui/src/window_ui.rs b/crates/ui-egui/src/window_ui.rs
+index 9d938ee2..00f90f4a 100644
+--- a/crates/ui-egui/src/window_ui.rs
++++ b/crates/ui-egui/src/window_ui.rs
+@@ -198,6 +198,8 @@ impl WordApp {
+             read_aloud_error: _,
+             saves_in_flight: _,
+             recovery_seen: _,
++            hosted_opened: _,
++            restore_scroll: _,
+             no_document: _,
+             windows: _,
+             print_document: _,

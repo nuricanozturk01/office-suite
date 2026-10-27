@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE identity.users\n             SET display_name = $2, bio = $3, avatar_url = $4, updated_at = $5\n             WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "27e0a79d877e278c488f44b73d07246ea2b42332399b51608ec19a13709a589b"
+}

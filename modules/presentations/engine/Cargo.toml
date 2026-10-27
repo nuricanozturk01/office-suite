@@ -1,0 +1,21 @@
+[package]
+name = "presentations-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Adapter between the presentations deck JSON and the vendored deckcraft engine (.pptx import/export)"
+
+[dependencies]
+deckcraft-color = { path = "../../../vendor/deckcraft/crates/color" }
+deckcraft-geom = { path = "../../../vendor/deckcraft/crates/geom" }
+deckcraft-model = { path = "../../../vendor/deckcraft/crates/model" }
+deckcraft-pptx = { path = "../../../vendor/deckcraft/crates/pptx" }
+merge3.workspace = true
+serde_json.workspace = true
+storage-contracts.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

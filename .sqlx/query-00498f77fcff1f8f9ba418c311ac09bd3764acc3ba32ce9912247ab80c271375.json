@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM workspace.shares WHERE resource_id = $1 AND grantee_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "00498f77fcff1f8f9ba418c311ac09bd3764acc3ba32ce9912247ab80c271375"
+}

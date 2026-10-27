@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE presentations.presentations\n             SET content = $2, version = version + 1, updated_at = $3\n             WHERE id = $1 AND version = $4 AND deleted_at IS NULL\n             RETURNING version",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "presentations.presentations",
+            "name": "version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c2ccbd17688a39da7f26b82ea9dd22792c8c42c1097ae2d558c8037a64aa2c53"
+}

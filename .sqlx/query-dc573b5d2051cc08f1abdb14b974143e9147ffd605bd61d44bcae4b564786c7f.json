@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO workspace.resources (id, deleted_at) VALUES ($1, $2)\n                 ON CONFLICT (id) DO UPDATE SET\n                    deleted_at = COALESCE(workspace.resources.deleted_at, EXCLUDED.deleted_at)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc573b5d2051cc08f1abdb14b974143e9147ffd605bd61d44bcae4b564786c7f"
+}

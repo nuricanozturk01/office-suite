@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE platform.outbox_failures SET parked_at = now()\n         WHERE outbox = $1 AND event_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "67cf74c54595ccc6d25e1b70d4e5a9ff33a6c1b8f744c46dd5efdea484c12520"
+}

@@ -1,0 +1,408 @@
+/*
+ * The page itself is always light, like paper: documents are user content whose colors
+ * (text color, highlights) must look the same for every collaborator and in print.
+ */
+.docs-page {
+  --page-text: #202124;
+  --page-muted: #5f6368;
+  --page-rule: #c7c7c7;
+  --page-fill: #f1f3f4;
+
+  --page-width: 210mm;
+  --page-mt: 25.4mm;
+  --page-mr: 25.4mm;
+  --page-mb: 25.4mm;
+  --page-ml: 25.4mm;
+
+  position: relative;
+  box-sizing: border-box;
+  width: var(--page-width);
+  margin-inline: auto;
+  background: #fff;
+  color: var(--page-text);
+  /* The gap between pages is transparent, so the shadow follows each sheet. */
+  filter: drop-shadow(0 1px 3px rgb(60 64 67 / 30%));
+}
+
+.docs-content {
+  box-sizing: border-box;
+  padding: var(--page-mt) var(--page-mr) var(--page-mb) var(--page-ml);
+  outline: none;
+  font-family: Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.15;
+  overflow-wrap: break-word;
+}
+
+.docs-content p {
+  margin-block: 0 0.5em;
+}
+
+.docs-content h1,
+.docs-content h2,
+.docs-content h3,
+.docs-content h4 {
+  margin-block: 1em 0.4em;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.docs-content h1 {
+  font-size: 20pt;
+}
+.docs-content h2 {
+  font-size: 16pt;
+}
+.docs-content h3 {
+  font-size: 14pt;
+  color: #434343;
+}
+.docs-content h4 {
+  font-size: 12pt;
+  color: #666;
+}
+
+.docs-content > :first-child {
+  margin-block-start: 0;
+}
+
+.docs-content ul,
+.docs-content ol {
+  margin-block: 0 0.5em;
+  padding-inline-start: 1.75em;
+}
+
+.docs-content ul {
+  list-style: disc;
+}
+.docs-content ul ul {
+  list-style: circle;
+}
+.docs-content ul ul ul {
+  list-style: square;
+}
+.docs-content ol {
+  list-style: decimal;
+}
+.docs-content ol ol {
+  list-style: lower-alpha;
+}
+.docs-content ol ol ol {
+  list-style: lower-roman;
+}
+
+.docs-content li > p {
+  margin-block-end: 0.15em;
+}
+
+.docs-content ul[data-type='taskList'] {
+  list-style: none;
+  padding-inline-start: 0.25em;
+}
+
+.docs-content ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+
+.docs-content ul[data-type='taskList'] li > label {
+  flex-shrink: 0;
+  margin-block-start: 0.15em;
+  user-select: none;
+}
+
+.docs-content ul[data-type='taskList'] li > div {
+  flex: 1;
+}
+
+.docs-content ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--page-muted);
+  text-decoration: line-through;
+}
+
+.docs-content input[type='checkbox'] {
+  accent-color: var(--color-accent);
+  inline-size: 1em;
+  block-size: 1em;
+}
+
+.docs-content blockquote {
+  margin-block: 0 0.5em;
+  border-inline-start: 3px solid var(--page-rule);
+  padding-inline-start: 1em;
+  color: var(--page-muted);
+}
+
+.docs-content pre {
+  margin-block: 0 0.5em;
+  border-radius: 4px;
+  background: var(--page-fill);
+  padding: 0.75em 1em;
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-size: 10pt;
+  white-space: pre-wrap;
+}
+
+.docs-content code {
+  border-radius: 3px;
+  background: var(--page-fill);
+  padding: 0.1em 0.25em;
+  font-family: 'Courier New', ui-monospace, monospace;
+}
+
+.docs-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.docs-content a {
+  color: #1155cc;
+  text-decoration: underline;
+}
+
+.docs-content hr {
+  margin-block: 1em;
+  border: 0;
+  border-block-start: 1px solid var(--page-rule);
+}
+
+.docs-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.docs-content img.ProseMirror-selectednode {
+  outline: 2px solid var(--color-accent);
+}
+
+.docs-content mark {
+  border-radius: 1px;
+  color: inherit;
+}
+
+/* Tables */
+.docs-content .tableWrapper {
+  margin-block: 0 0.5em;
+  overflow-x: auto;
+}
+
+.docs-content table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.docs-content td,
+.docs-content th {
+  position: relative;
+  min-width: 2em;
+  border: 1px solid #999;
+  padding: 0.35em 0.5em;
+  vertical-align: top;
+}
+
+.docs-content th {
+  background: var(--page-fill);
+  font-weight: 700;
+  text-align: start;
+}
+
+.docs-content td > p,
+.docs-content th > p {
+  margin: 0;
+}
+
+.docs-content .selectedCell::after {
+  position: absolute;
+  inset: 0;
+  background: rgb(26 115 232 / 15%);
+  content: '';
+  pointer-events: none;
+}
+
+.docs-content .column-resize-handle {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: -2px;
+  width: 4px;
+  background: var(--color-accent);
+  pointer-events: none;
+}
+
+.docs-content.resize-cursor {
+  cursor: col-resize;
+}
+
+/* Placeholder on the empty first paragraph */
+.docs-content p.is-editor-empty:first-child::before {
+  float: inline-start;
+  height: 0;
+  color: #9aa0a6;
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+/* Remote carets */
+.collaboration-carets__caret {
+  position: relative;
+  margin-inline: -1px;
+  border-inline: 1px solid;
+  word-break: normal;
+  pointer-events: none;
+}
+
+.collaboration-carets__label {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline-start: -1px;
+  border-radius: 3px 3px 3px 0;
+  padding: 0.0625rem 0.375rem;
+  color: white;
+  font-family: system-ui, sans-serif;
+  font-size: 0.75rem;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Pagination: footer, gap and header between two pages */
+.page-spacer {
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+  pointer-events: none;
+}
+
+.page-footer,
+.page-header {
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: 1fr 1fr 1fr;
+  align-items: center;
+  box-sizing: border-box;
+  background: #fff;
+  color: var(--page-muted);
+  font-family: Arial, sans-serif;
+  font-size: 9pt;
+}
+
+.page-gap {
+  flex-shrink: 0;
+  background: var(--color-surface-muted);
+  margin-inline: 0;
+}
+
+.page-break {
+  position: relative;
+  height: 1.5em;
+  margin-block: 0.25em;
+  border-block-end: 1px dashed var(--page-rule);
+  color: var(--page-muted);
+  font-size: 8pt;
+  text-align: center;
+}
+
+.page-break::after {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: -0.7em;
+  margin-inline: auto;
+  width: max-content;
+  background: #fff;
+  padding-inline: 0.5em;
+  content: 'Sayfa sonu';
+}
+
+/* Named paragraph styles */
+.docs-content [data-doc-style='title'] {
+  font-size: 26pt;
+  font-weight: 400;
+  line-height: 1.15;
+}
+
+.docs-content [data-doc-style='subtitle'] {
+  color: var(--page-muted);
+  font-size: 13pt;
+  letter-spacing: 0.04em;
+}
+
+.docs-content [data-doc-style='noSpacing'] {
+  margin-block: 0;
+}
+
+.docs-content [data-doc-style='quote'] {
+  margin-inline: 2em;
+  color: var(--page-muted);
+  font-style: italic;
+  text-align: center;
+}
+
+.docs-content sub,
+.docs-content sup {
+  font-size: 0.75em;
+  line-height: 0;
+}
+
+/* Find and replace */
+.search-match {
+  background: rgb(255 235 59 / 55%);
+}
+
+.search-current {
+  background: rgb(255 152 0 / 65%);
+}
+
+/* Formatting marks (the ¶ button) */
+.docs-show-marks .docs-content p::after,
+.docs-show-marks .docs-content h1::after,
+.docs-show-marks .docs-content h2::after,
+.docs-show-marks .docs-content h3::after,
+.docs-show-marks .docs-content h4::after {
+  color: #6a8cc7;
+  content: '¶';
+}
+
+@page {
+  margin: 0;
+}
+
+@media print {
+  .docs-editor,
+  .docs-body {
+    display: block;
+    height: auto;
+  }
+
+  .docs-chrome {
+    display: none !important;
+  }
+
+  .docs-canvas {
+    overflow: visible;
+  }
+
+  .docs-zoom {
+    zoom: 1 !important;
+    padding: 0;
+  }
+
+  .docs-page {
+    width: auto;
+    filter: none;
+  }
+
+  .page-spacer {
+    height: 0 !important;
+    break-after: page;
+    visibility: hidden;
+  }
+
+  .collaboration-carets__caret,
+  .collaboration-carets__label {
+    display: none;
+  }
+}

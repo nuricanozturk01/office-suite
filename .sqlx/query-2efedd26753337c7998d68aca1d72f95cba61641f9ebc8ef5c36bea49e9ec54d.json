@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT CASE WHEN r.owner_id = $1 THEN 'owner' ELSE s.role END AS \"role?\"\n               FROM workspace.resources r\n               LEFT JOIN workspace.shares s ON s.resource_id = r.id AND s.grantee_id = $1\n               WHERE r.id = $2 AND r.deleted_at IS NULL AND r.owner_id IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2efedd26753337c7998d68aca1d72f95cba61641f9ebc8ef5c36bea49e9ec54d"
+}

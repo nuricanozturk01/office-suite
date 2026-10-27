@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO platform.outbox_failures (outbox, event_id, consumer, attempts, last_error)\n         VALUES ($1, $2, $3, 1, $4)\n         ON CONFLICT (outbox, event_id) DO UPDATE\n         SET attempts = platform.outbox_failures.attempts + 1,\n             consumer = EXCLUDED.consumer,\n             last_error = EXCLUDED.last_error,\n             updated_at = now()\n         RETURNING attempts",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "platform.outbox_failures",
+            "name": "attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3d2aae58833053ddd92e0bacfa372cf6511ccaed38000cbe4a0a220bca0e926f"
+}

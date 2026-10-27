@@ -1,0 +1,13 @@
+# Gzip size budgets for built web assets, checked by `just budget` (needs `pnpm build` first).
+# Placeholders from the design spec; adjust only together with the measured baseline in docs/STATUS.md.
+
+[[budget]]
+name = "initial-js"
+glob = "apps/web/dist/assets/index-*.js"
+max_gzip_bytes = 153600
+
+[[budget]]
+name = "formula-wasm"
+glob = "apps/web/dist/assets/*formula*.wasm"
+max_gzip_bytes = 409600
+optional = true

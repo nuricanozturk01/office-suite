@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+**/target
+**/node_modules
+apps/web
+packages
+docs
+.superpowers
+.claude

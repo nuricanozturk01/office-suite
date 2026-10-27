@@ -1,0 +1,434 @@
+diff --git a/apps/gridcraft-web/index.html b/apps/gridcraft-web/index.html
+index 321aa302..1086cf63 100644
+--- a/apps/gridcraft-web/index.html
++++ b/apps/gridcraft-web/index.html
+@@ -3,7 +3,7 @@
+ <head>
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+-  <title>GridCraft</title>
++  <title>Sheets</title>
+   <link data-trunk rel="icon" href="../../assets/app-icon/gridcraft.ico" />
+   <link data-trunk rel="rust" data-bin="gridcraft-web" data-wasm-opt="z" data-weak-refs />
+   <style>
+@@ -15,6 +15,6 @@
+ </head>
+ <body>
+   <canvas id="gridcraft_canvas"></canvas>
+-  <div id="gridcraft_loading">Loading GridCraft&hellip;</div>
++  <div id="gridcraft_loading">Loading&hellip;</div>
+ </body>
+ </html>
+diff --git a/apps/gridcraft-web/src/host.rs b/apps/gridcraft-web/src/host.rs
+index 2286023e..aa2f9919 100644
+--- a/apps/gridcraft-web/src/host.rs
++++ b/apps/gridcraft-web/src/host.rs
+@@ -56,6 +56,19 @@ impl Bridge {
+     pub fn connect(&self, services: &mut Services, inbox: Inbox, ctx: egui::Context) {
+         self.listen(inbox, ctx);
+         let bridge = self.clone();
++        let bridge = self.clone();
++        services.host_command = Some(Box::new(move |id: &str| {
++            if ["file.new", "file.open", "file.close", "file.saveAs", "file.share"].contains(&id) {
++                bridge.send(&[("type", "gridcraft:command".into()), ("command", id.into())])
++            } else {
++                false
++            }
++        }));
++        let bridge = self.clone();
++        services.on_renamed = Some(Box::new(move |name: &str| {
++            bridge.send(&[("type", "gridcraft:renamed".into()), ("name", name.into())]);
++        }));
++        let bridge = self.clone();
+         services.download = Some(Box::new(move |name: &str, bytes: &[u8]| {
+             if let Err(e) = bridge.post_save(name, bytes) {
+                 log::error!("couldn't hand {name} to the page: {e}");
+diff --git a/crates/ui-egui/src/backstage.rs b/crates/ui-egui/src/backstage.rs
+index 3ceef246..7b3ff032 100644
+--- a/crates/ui-egui/src/backstage.rs
++++ b/crates/ui-egui/src/backstage.rs
+@@ -158,6 +158,14 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
+     let t = Tokens::get(&ctx);
+     let lang = app.ui.language;
+     let mut out = Outcome::default();
++    // Framed by the page that keeps the files: no sample gallery, the workbook is already open.
++    let hosted = app.services.host_command.is_some();
++    if hosted && matches!(bs.page, Page::Home | Page::New) {
++        if bs.page == Page::New {
++            app.run_or_alert("file.new", json!({}));
++        }
++        bs.page = Page::Info;
++    }
+     let (nav_bg, nav_text, nav_sel) =
+         if t.dark { (t.accent_soft, t.text, Color32::from_white_alpha(30)) } else { (t.accent, Color32::WHITE, Color32::from_black_alpha(46)) };
+     egui::Panel::left("backstage_nav")
+@@ -171,6 +179,9 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
+             }
+             ui.add_space(10.0);
+             for page in [Page::Home, Page::New, Page::Open] {
++                if hosted && page == Page::Home {
++                    continue;
++                }
+                 if nav_item(ui, page.icon(), lang.tr(page.label()), bs.page == page, nav_text, nav_sel).clicked() {
+                     out.page = Some(page);
+                 }
+@@ -184,7 +195,14 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
+             }
+             for page in [Page::SaveAs, Page::Print, Page::Export] {
+                 if nav_item(ui, page.icon(), lang.tr(page.label()), bs.page == page, nav_text, nav_sel).clicked() {
+-                    out.page = Some(page);
++                    // Hosted by the page: Save As hands the workbook to the page, which downloads a copy.
++                    let to_page = page == Page::SaveAs && app.services.host_command.as_ref().is_some_and(|host| host("file.saveAs"));
++                    if to_page {
++                        // The page asked for a copy; the workbook follows right behind that message.
++                        app.open_dialog("saveAs", json!({}));
++                    } else {
++                        out.page = Some(page);
++                    }
+                 }
+             }
+             if nav_item(ui, Icon::Close, lang.tr("Close"), false, nav_text, nav_sel).clicked() {
+@@ -251,6 +269,10 @@ fn save(app: &mut SheetApp, out: &mut Outcome) {
+     if app.session.active().is_some_and(|d| d.path.is_some()) {
+         app.run_or_alert("file.save", json!({}));
+         out.close = true;
++    } else if app.services.host_command.is_some() {
++        // Hosted by the page (`?host=parent`): it keeps the file, so Save hands the workbook over now.
++        app.open_dialog("saveAs", json!({}));
++        out.close = true;
+     } else {
+         out.page = Some(Page::SaveAs);
+     }
+@@ -939,30 +961,36 @@ fn options(app: &mut SheetApp, ui: &mut Ui) {
+     let lang = app.ui.language;
+     section(ui, lang, "Options|General");
+     egui::Grid::new("backstage_options_general").num_columns(2).spacing(vec2(18.0, 10.0)).show(ui, |ui| {
+-        ui.label(lang.tr("Display theme"));
+-        let mode = app.ui.theme_mode();
+-        let current = match mode {
+-            "system" => "System",
+-            "dark" => "Dark",
+-            _ => "Light",
+-        };
+-        egui::ComboBox::from_id_salt("backstage_theme").width(160.0).selected_text(lang.tr(current)).show_ui(ui, |ui| {
+-            for (value, label) in [("system", "System"), ("light", "Light"), ("dark", "Dark")] {
+-                if ui.selectable_label(mode == value, lang.tr(label)).clicked() {
+-                    app.run_or_alert("view.theme", json!({"mode": value}));
++        // Hosted by the page: its theme switch decides.
++        if app.services.host_command.is_none() {
++            ui.label(lang.tr("Display theme"));
++            let mode = app.ui.theme_mode();
++            let current = match mode {
++                "system" => "System",
++                "dark" => "Dark",
++                _ => "Light",
++            };
++            egui::ComboBox::from_id_salt("backstage_theme").width(160.0).selected_text(lang.tr(current)).show_ui(ui, |ui| {
++                for (value, label) in [("system", "System"), ("light", "Light"), ("dark", "Dark")] {
++                    if ui.selectable_label(mode == value, lang.tr(label)).clicked() {
++                        app.run_or_alert("view.theme", json!({"mode": value}));
++                    }
+                 }
+-            }
+-        });
+-        ui.end_row();
+-        ui.label(lang.tr("Interface language"));
+-        egui::ComboBox::from_id_salt("backstage_language").width(160.0).selected_text(lang.name()).show_ui(ui, |ui| {
+-            for l in i18n::Language::for_picker() {
+-                if ui.selectable_label(l == lang, l.name()).clicked() {
+-                    app.run_or_alert("app.language.set", json!({"language": l.code()}));
++            });
++            ui.end_row();
++        }
++        // Hosted by the page: the app is English only.
++        if app.services.host_command.is_none() {
++            ui.label(lang.tr("Interface language"));
++            egui::ComboBox::from_id_salt("backstage_language").width(160.0).selected_text(lang.name()).show_ui(ui, |ui| {
++                for l in i18n::Language::for_picker() {
++                    if ui.selectable_label(l == lang, l.name()).clicked() {
++                        app.run_or_alert("app.language.set", json!({"language": l.code()}));
++                    }
+                 }
+-            }
+-        });
+-        ui.end_row();
++            });
++            ui.end_row();
++        }
+     });
+     ui.add_space(6.0);
+     let mut formula_bar = app.session.prefs.formula_bar;
+diff --git a/crates/ui-egui/src/credits.rs b/crates/ui-egui/src/credits.rs
+index 5ab099c2..95d27cab 100644
+--- a/crates/ui-egui/src/credits.rs
++++ b/crates/ui-egui/src/credits.rs
+@@ -256,7 +256,7 @@ pub fn contributors_ui(ui: &mut egui::Ui) {
+                     if i > 0 {
+                         ui.label(RichText::new("·").weak());
+                     }
+-                    ui.hyperlink_to(c.name(v.names), format!("https://github.com/{}", c.login)).on_hover_text(c.summary());
++                    ui.label(c.name(v.names)).on_hover_text(c.summary());
+                 }
+             });
+         }
+@@ -279,7 +279,7 @@ fn table(ui: &mut egui::Ui, list: &[&Contributor], v: &mut View) {
+         }
+         ui.end_row();
+         for c in list {
+-            ui.hyperlink_to(c.name(v.names), format!("https://github.com/{}", c.login)).on_hover_text(c.summary());
++            ui.label(c.name(v.names)).on_hover_text(c.summary());
+             ui.label(group(c.prs));
+             ui.label(group(c.commits));
+             ui.label(group(c.lines_added));
+diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
+index c300bf07..259b19e3 100644
+--- a/crates/ui-egui/src/dialogs.rs
++++ b/crates/ui-egui/src/dialogs.rs
+@@ -1878,9 +1878,7 @@ fn about(ui: &mut egui::Ui, d: &mut Dialog) {
+             ui.heading("GridCraft");
+             ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+             ui.add_space(4.0);
+-            ui.label("A clean-room, open-source, Rust-native spreadsheet. Part of ArtCraft.");
+-            ui.hyperlink_to("getartcraft.com/apps/gridcraft", "https://getartcraft.com/apps/gridcraft");
+-            ui.hyperlink_to("Join the ArtCraft Discord", "https://discord.gg/artcraft");
++            ui.label("A clean-room, open-source, Rust-native spreadsheet.");
+         }
+     }
+ }
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index 9bea918d..15af0778 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -152,6 +152,14 @@ impl UiState {
+     }
+ }
+ 
++/// Where the user was in a workbook, to put them back after the workbook is replaced.
++struct Place {
++    uid: u64,
++    sheet: usize,
++    selection: gridcraft_engine::Selection,
++    views: Vec<(usize, SheetView)>,
++}
++
+ /// Per-sheet view state (scroll position in sheet points).
+ #[derive(Clone, Copy, Debug, Default, PartialEq)]
+ pub struct SheetView {
+@@ -203,6 +211,12 @@ pub struct Services {
+     pub paste_text: Option<Box<dyn FnMut() -> Option<String>>>,
+     /// Web: deliver a file to the user (name, bytes).
+     pub download: Option<Box<dyn Fn(&str, &[u8])>>,
++    /// Web, framed by a page that keeps the files (`?host=parent`): file-level commands (New, Close,
++    /// Save As) belong to that page, not to the app. Called with the command id before it runs;
++    /// returns true when the page took it over.
++    pub host_command: Option<Box<dyn Fn(&str) -> bool>>,
++    /// Web, framed by a page: told the new title when the user sets Info › Title.
++    pub on_renamed: Option<Box<dyn Fn(&str)>>,
+     /// Web: start an asynchronous file pick; the bytes arrive later in `inbox`.
+     pub open_async: Option<Box<dyn Fn()>>,
+     /// Files delivered asynchronously (name, bytes), opened on the next frame.
+@@ -249,6 +263,9 @@ pub struct SheetApp {
+     /// The window chrome to draw (see [`Chrome`]).
+     pub chrome: Chrome,
+     pub views: HashMap<(u64, usize), SheetView>,
++    /// Hosted by a page (`?host=parent`): a workbook was opened already, so a later open (the page
++    /// refreshing the file after somebody else saved) keeps this user's place.
++    hosted_opened: bool,
+     pub editor: Option<editor::EditState>,
+     pub text_box_editor: Option<text_box::EditState>,
+     pub dialog: Option<dialogs::Dialog>,
+@@ -314,6 +331,7 @@ impl SheetApp {
+             ui: UiState::default(),
+             chrome: Chrome::default(),
+             views: HashMap::new(),
++            hosted_opened: false,
+             editor: None,
+             text_box_editor: None,
+             dialog: None,
+@@ -385,7 +403,22 @@ impl SheetApp {
+ 
+     /// Runs an engine command (or a UI command) and handles UI requests it makes.
+     pub fn run(&mut self, id: &str, params: Json) -> Result<Json, String> {
++        if (matches!(id, "file.new" | "file.close")
++            || (id == "file.open" && params.as_object().is_none_or(serde_json::Map::is_empty)))
++            && let Some(host) = &self.services.host_command
++            && host(id)
++        {
++            return Ok(Json::Null);
++        }
++        let new_title = (id == "file.properties").then(|| params.get("title").and_then(Json::as_str).map(str::to_owned)).flatten();
+         let r = self.run_command(id, params);
++        // Hosted by a page: tell it when the title is set, so its file list follows.
++        if r.is_ok()
++            && let Some(title) = new_title.filter(|t| !t.trim().is_empty())
++            && let Some(report) = &self.services.on_renamed
++        {
++            report(title.trim());
++        }
+         // This copy leaves the system clipboard alone: note what it holds, so Paste can tell
+         // that GridCraft's copy is newer while that text is still there.
+         if matches!(id, "edit.copy" | "edit.cut") && r.is_ok() {
+@@ -1249,9 +1282,15 @@ impl SheetApp {
+             .unwrap_or_default();
+         for (name, bytes) in arrived {
+             let b64 = gridcraft_engine::io::base64_encode(&bytes);
++            // A later open from the hosting page is a refresh: keep the user's sheet, selection and scroll.
++            let kept = (self.services.host_command.is_some() && self.hosted_opened).then(|| self.capture_place()).flatten();
+             match self.run("file.open", json!({"name": &name, "base64": &b64})) {
+                 // A file picked from File › Open (web) arrives here: show it, not the Backstage.
+                 Ok(r) => {
++                    if let Some(place) = kept {
++                        self.restore_place(place);
++                    }
++                    self.hosted_opened = true;
+                     self.backstage = None;
+                     self.show_open_warnings(&r);
+                 }
+@@ -1268,6 +1307,26 @@ impl SheetApp {
+         }
+     }
+ 
++    /// Where the user is in the active workbook: the sheet, the selection and every sheet's scroll.
++    fn capture_place(&self) -> Option<Place> {
++        let d = self.session.active()?;
++        let views = self.views.iter().filter(|((uid, _), _)| *uid == d.uid).map(|((_, sheet), view)| (*sheet, *view)).collect();
++        Some(Place { uid: d.uid, sheet: d.wb.active_sheet, selection: d.selection.clone(), views })
++    }
++
++    /// Puts the user back where they were in the workbook that replaced the one they had.
++    fn restore_place(&mut self, place: Place) {
++        let Some(uid) = self.session.active().map(|d| d.uid) else { return };
++        self.views.retain(|(old, _), _| *old != place.uid);
++        for (sheet, view) in place.views {
++            self.views.insert((uid, sheet), view);
++        }
++        let _ = self.run("sheet.activate", json!({"sheet": place.sheet}));
++        if let Some(d) = self.session.active_mut() {
++            d.selection = place.selection;
++        }
++    }
++
+     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+         if let Some(mut batch) = self.synthetic.pop_front() {
+             raw.events.append(&mut batch);
+diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
+index 1415b683..1d222100 100644
+--- a/crates/ui-egui/src/ribbon.rs
++++ b/crates/ui-egui/src/ribbon.rs
+@@ -51,22 +51,28 @@ pub fn title_bar(app: &mut SheetApp, ui: &mut Ui) {
+         }
+         ui.horizontal_centered(|ui| {
+             ui.add_space(TITLE_LEFT_PAD);
+-            // AutoSave toggle (saves after each change when the workbook has a file).
+-            ui.label(egui::RichText::new(app.ui.language.tr("AutoSave")).font(theme::ui_font(12.5)).color(t.text_dim));
+-            let on = app.ui.autosave;
+-            let (r, resp) = ui.allocate_exact_size(vec2(30.0, 16.0), Sense::click());
+-            ui.painter().rect_filled(r, 8.0, if on { t.accent } else { Color32::TRANSPARENT });
+-            ui.painter().rect_stroke(r, 8.0, Stroke::new(1.0, if on { t.accent } else { t.text_dim }), StrokeKind::Inside);
+-            let knob = if on { pos2(r.right() - 8.0, r.center().y) } else { pos2(r.left() + 8.0, r.center().y) };
+-            ui.painter().circle_filled(knob, 5.0, if on { t.on_accent } else { t.text_dim });
+-            if resp.on_hover_text(app.ui.language.tr("AutoSave: save after every change (workbooks saved to a file)")).clicked() {
+-                app.toggle_autosave();
++            // Hosted by the page (`?host=parent`): it saves on its own, so no AutoSave switch.
++            if app.services.host_command.is_none() {
++                // AutoSave toggle (saves after each change when the workbook has a file).
++                ui.label(egui::RichText::new(app.ui.language.tr("AutoSave")).font(theme::ui_font(12.5)).color(t.text_dim));
++                let on = app.ui.autosave;
++                let (r, resp) = ui.allocate_exact_size(vec2(30.0, 16.0), Sense::click());
++                ui.painter().rect_filled(r, 8.0, if on { t.accent } else { Color32::TRANSPARENT });
++                ui.painter().rect_stroke(r, 8.0, Stroke::new(1.0, if on { t.accent } else { t.text_dim }), StrokeKind::Inside);
++                let knob = if on { pos2(r.right() - 8.0, r.center().y) } else { pos2(r.left() + 8.0, r.center().y) };
++                ui.painter().circle_filled(knob, 5.0, if on { t.on_accent } else { t.text_dim });
++                if resp.on_hover_text(app.ui.language.tr("AutoSave: save after every change (workbooks saved to a file)")).clicked() {
++                    app.toggle_autosave();
++                }
+             }
+             ui.add_space(6.0);
+-            let __k = icon_button(ui, Icon::Home, t.text_dim, "Home", vec2(26.0, ch));
+-            control_keytip(app, ui, &__k, "start");
+-            if __k.clicked() {
+-                app.open_dialog("start", json!({}));
++            // Hosted by the page: Home (templates, recent files) belongs to the page.
++            if app.services.host_command.is_none() {
++                let __k = icon_button(ui, Icon::Home, t.text_dim, "Home", vec2(26.0, ch));
++                control_keytip(app, ui, &__k, "start");
++                if __k.clicked() {
++                    app.open_dialog("start", json!({}));
++                }
+             }
+             if icon_button(ui, Icon::Save, t.text_dim, "Save", vec2(26.0, ch)).clicked()
+                 // File operations must include the cell the user is still editing (as the File > Save menu item already does).
+@@ -131,33 +137,43 @@ pub fn title_bar(app: &mut SheetApp, ui: &mut Ui) {
+                     app.open_dialog("commandSearch", json!({}));
+                 }
+                 let share = small_button(ui, Icon::Share, "Share", "Share: export or save a copy", true);
+-                egui::Popup::menu(&share).show(|ui| {
+-                    if ui.button("Export as PDF…").clicked() {
+-                        app.run_or_alert("file.exportPdf", json!({}));
++                // Hosted by the page (`?host=parent`): Share opens the page's sharing dialog, not an export menu.
++                if let Some(host) = &app.services.host_command {
++                    if share.clicked() {
++                        host("file.share");
+                     }
+-                    for (label, fmt) in
+-                        [("Save a Copy as Excel Workbook (.xlsx)…", "xlsx"), ("Export as CSV…", "csv"), ("Export as Web Page (.html)…", "html")]
+-                    {
+-                        if ui.button(label).clicked() {
+-                            app.open_dialog("saveCopy", json!({"format": fmt}));
++                } else {
++                    egui::Popup::menu(&share).show(|ui| {
++                        if ui.button("Export as PDF…").clicked() {
++                            app.run_or_alert("file.exportPdf", json!({}));
+                         }
+-                    }
+-                });
++                        for (label, fmt) in
++                            [("Save a Copy as Excel Workbook (.xlsx)…", "xlsx"), ("Export as CSV…", "csv"), ("Export as Web Page (.html)…", "html")]
++                        {
++                            if ui.button(label).clicked() {
++                                app.open_dialog("saveCopy", json!({"format": fmt}));
++                            }
++                        }
++                    });
++                }
+                 let __k = icon_button(ui, Icon::Comment, t.text_dim, "Comments", vec2(28.0, ch));
+                 control_keytip(app, ui, &__k, "comments");
+                 if __k.clicked() {
+                     app.open_dialog("comments", json!({}));
+                 }
+-                // Quick light/dark switch (#194); right-click offers System as well. The same
+-                // choice lives in File › Display theme and the View tab.
+-                let lang = app.ui.language;
+-                let theme = icon_button(ui, Icon::Appearance, t.text_dim, "Dark Mode", vec2(28.0, 26.0));
+-                let dark = ui.ctx().theme() == egui::Theme::Dark;
+-                theme.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, dark, lang.tr("Dark Mode")));
+-                if theme.clicked() {
+-                    act(app, "view.darkMode", json!({}));
++                // Hosted by the page: its theme switch decides (it answers `prefers-color-scheme`).
++                if app.services.host_command.is_none() {
++                    // Quick light/dark switch (#194); right-click offers System as well. The same
++                    // choice lives in File › Display theme and the View tab.
++                    let lang = app.ui.language;
++                    let theme = icon_button(ui, Icon::Appearance, t.text_dim, "Dark Mode", vec2(28.0, 26.0));
++                    let dark = ui.ctx().theme() == egui::Theme::Dark;
++                    theme.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, dark, lang.tr("Dark Mode")));
++                    if theme.clicked() {
++                        act(app, "view.darkMode", json!({}));
++                    }
++                    theme.context_menu(|ui| theme_choices(app, ui));
+                 }
+-                theme.context_menu(|ui| theme_choices(app, ui));
+                 ui.min_rect().left()
+             });
+             // Centred title, cut with "…" so it never runs under the controls on either side.
+@@ -2510,6 +2526,10 @@ fn view(app: &mut SheetApp, ui: &mut Ui) {
+         );
+     });
+     ui.vertical(|ui| {
++        // Hosted by the page: its theme switch decides.
++        if app.services.host_command.is_some() {
++            return;
++        }
+         ui.label(lang.tr("Display theme"));
+         let mode = app.ui.theme_mode();
+         let label = match mode {

@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT version, name, saved_by, saved_at,\n                      octet_length(bytes)::bigint AS \"size!\"\n               FROM storage.package_history\n               WHERE resource_id = $1 ORDER BY version DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "version",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "storage.package_history",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "storage.package_history",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "saved_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "storage.package_history",
+            "name": "saved_by"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "saved_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "storage.package_history",
+            "name": "saved_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "size!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "2459ad132812ad5c9adb7338a840d3fde4cb6260cb79a313feaba6dea3330904"
+}

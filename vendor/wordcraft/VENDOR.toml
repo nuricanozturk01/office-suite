@@ -1,0 +1,4 @@
+upstream = "https://github.com/storytold/wordcraft"
+sha = "2c99a427803364354181d0bc20865f05880605f7"
+crates = ["doc", "docx", "geom"]
+note = "root Cargo.toml: members rewritten to crates/*, default-members removed"

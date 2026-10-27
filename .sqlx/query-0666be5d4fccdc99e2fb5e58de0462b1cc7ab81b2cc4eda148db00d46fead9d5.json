@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO collaboration.document_snapshots (document_id, state, upto_seq, updated_at)\n             VALUES ($1, $2, $3, now())\n             ON CONFLICT (document_id)\n             DO UPDATE SET state = EXCLUDED.state, upto_seq = EXCLUDED.upto_seq, updated_at = now()\n             WHERE collaboration.document_snapshots.upto_seq < EXCLUDED.upto_seq",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0666be5d4fccdc99e2fb5e58de0462b1cc7ab81b2cc4eda148db00d46fead9d5"
+}

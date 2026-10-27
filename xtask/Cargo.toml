@@ -1,0 +1,29 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+collaboration.workspace = true
+documents.workspace = true
+spreadsheets.workspace = true
+presentations.workspace = true
+pdfs.workspace = true
+storage.workspace = true
+workspace.workspace = true
+identity.workspace = true
+platform.workspace = true
+secrecy.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+cargo_metadata.workspace = true
+serde.workspace = true
+toml.workspace = true
+flate2.workspace = true
+
+[lints]
+workspace = true

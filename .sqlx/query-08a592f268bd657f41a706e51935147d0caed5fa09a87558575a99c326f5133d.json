@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO identity.outbox (id, event_type, payload, created_at)\n                 VALUES ($1, 'UserRegistered', $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "08a592f268bd657f41a706e51935147d0caed5fa09a87558575a99c326f5133d"
+}

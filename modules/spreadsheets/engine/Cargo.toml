@@ -1,0 +1,31 @@
+[package]
+name = "spreadsheets-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Adapter between the spreadsheets workbook JSON and the vendored gridcraft engine (xlsx import/export)"
+
+[features]
+default = ["xlsx"]
+# `.xlsx` import and export; the WASM build leaves it out.
+xlsx = ["dep:gridcraft-xlsx", "dep:merge3", "dep:storage-contracts"]
+
+[dependencies]
+gridcraft-calc = { path = "../../../vendor/gridcraft/crates/calc" }
+gridcraft-core = { path = "../../../vendor/gridcraft/crates/core" }
+gridcraft-model = { path = "../../../vendor/gridcraft/crates/model" }
+gridcraft-xlsx = { path = "../../../vendor/gridcraft/crates/xlsx", optional = true }
+merge3 = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+storage-contracts = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[lints]
+workspace = true
+
+[[test]]
+name = "xlsx_roundtrip"
+required-features = ["xlsx"]

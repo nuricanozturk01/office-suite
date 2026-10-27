@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT state, upto_seq FROM collaboration.document_snapshots WHERE document_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "collaboration.document_snapshots",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "upto_seq",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collaboration.document_snapshots",
+            "name": "upto_seq"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "2bcd59852e3b19305087bb29ea65785cd8a8369f1d3c203af0dcb091aa775ce0"
+}

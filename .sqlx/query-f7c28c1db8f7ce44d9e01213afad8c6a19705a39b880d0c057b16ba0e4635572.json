@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE identity.refresh_tokens SET revoked_at = $2\n             WHERE revoked_at IS NULL AND family_id =\n                (SELECT family_id FROM identity.refresh_tokens WHERE token_hash = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f7c28c1db8f7ce44d9e01213afad8c6a19705a39b880d0c057b16ba0e4635572"
+}

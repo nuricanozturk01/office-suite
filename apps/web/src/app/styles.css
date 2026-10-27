@@ -1,0 +1,91 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/instrument-sans';
+@import '@fontsource-variable/bricolage-grotesque';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --color-surface: oklch(97.6% 0.003 235);
+  --color-surface-muted: oklch(94.2% 0.006 235);
+  --color-surface-raised: oklch(100% 0 0);
+  --color-border: oklch(88% 0.008 235);
+  --color-text: oklch(24% 0.025 240);
+  --color-text-muted: oklch(48% 0.02 240);
+  --color-accent: oklch(50% 0.2 268);
+  --color-accent-hover: oklch(44% 0.2 268);
+  --color-accent-contrast: oklch(99% 0 0);
+  --color-danger: oklch(52% 0.2 27);
+  --color-danger-surface: oklch(96% 0.03 25);
+  --color-success: oklch(55% 0.14 155);
+  --color-warning: oklch(72% 0.16 75);
+  --color-focus: oklch(58% 0.2 268);
+  --color-ink: oklch(24% 0.025 240);
+  --color-docs: oklch(50% 0.2 268);
+  --color-sheets: oklch(50% 0.12 155);
+  --color-slides: oklch(55% 0.16 50);
+  --color-pdf: oklch(50% 0.19 27);
+}
+
+:root.dark {
+  color-scheme: dark;
+  --color-surface: oklch(19% 0.015 240);
+  --color-surface-muted: oklch(23% 0.016 240);
+  --color-surface-raised: oklch(26% 0.018 240);
+  --color-border: oklch(34% 0.018 240);
+  --color-text: oklch(94% 0.006 235);
+  --color-text-muted: oklch(72% 0.015 235);
+  --color-accent: oklch(72% 0.14 268);
+  --color-accent-hover: oklch(78% 0.13 268);
+  --color-accent-contrast: oklch(18% 0.02 260);
+  --color-danger: oklch(70% 0.17 27);
+  --color-danger-surface: oklch(28% 0.06 25);
+  --color-docs: oklch(74% 0.13 268);
+  --color-sheets: oklch(72% 0.15 155);
+  --color-slides: oklch(75% 0.15 60);
+  --color-pdf: oklch(72% 0.17 25);
+}
+
+@theme inline {
+  --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display:
+    'Bricolage Grotesque Variable', 'Instrument Sans Variable', ui-sans-serif, sans-serif;
+  --color-surface: var(--color-surface);
+  --color-surface-muted: var(--color-surface-muted);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-border: var(--color-border);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-contrast: var(--color-accent-contrast);
+  --color-danger: var(--color-danger);
+  --color-danger-surface: var(--color-danger-surface);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-focus: var(--color-focus);
+  --color-ink: var(--color-ink);
+  --color-docs: var(--color-docs);
+  --color-sheets: var(--color-sheets);
+  --color-slides: var(--color-slides);
+  --color-pdf: var(--color-pdf);
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-surface font-sans text-text antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display tracking-tight;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-focus;
+  }
+}

@@ -1,0 +1,20 @@
+Office Suite
+Third-party code bundled in this repository (see docs/adr/0001-vendored-engines.md):
+
+vendor/gridcraft  https://github.com/storytold/gridcraft @ 4eb2fb5c8ed30a580acf24234fffb2cb6256e335
+  Copyright (c) 2026 ArtCraft Team and the GridCraft contributors.
+  Licensed under MIT OR Apache-2.0 (vendor/gridcraft/LICENSE-MIT, LICENSE-APACHE).
+  Engine crates only, unmodified. ArtCraft names, wordmarks and logos are trademarks of the
+  ArtCraft Team and are not bundled.
+
+vendor/wordcraft  https://github.com/storytold/wordcraft @ 2c99a427803364354181d0bc20865f05880605f7
+  Copyright (c) 2026 ArtCraft Team and the WordCraft contributors.
+  Licensed under MIT OR Apache-2.0 (vendor/wordcraft/LICENSE-MIT, LICENSE-APACHE).
+  Engine crates only, unmodified. ArtCraft names, wordmarks and logos are trademarks of the
+  ArtCraft Team and are not bundled.
+
+vendor/deckcraft  https://github.com/storytold/deckcraft @ aaf6c1c38aa6c59beda8110bd014cc6c96c6ec74
+  Copyright (c) 2026 ArtCraft Team and the DeckCraft contributors.
+  Licensed under MIT OR Apache-2.0 (vendor/deckcraft/LICENSE-MIT, LICENSE-APACHE).
+  Engine crates only, unmodified. ArtCraft names, wordmarks and logos are trademarks of the
+  ArtCraft Team and are not bundled.
