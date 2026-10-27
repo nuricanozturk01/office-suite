@@ -243,7 +243,7 @@ The spreadsheet formula engine (`spreadsheets-engine-wasm` crate) compiled to **
 ### Docker — one command
 
 ```sh
-docker run -d -p 8080:8080 -v office-data:/data repo.repsy.io/nuricanozturk/myoffice-docker/office:latest
+docker run -d -p 8080:8080 -v office-data:/data repo.repsy.io/nuricanozturk/office-suite/office:latest
 ```
 
 Open `http://localhost:8080`. Postgres, Redis, the API and the web app all run inside this one
