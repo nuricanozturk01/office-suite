@@ -49,7 +49,7 @@ impl Settings {
     /// # Errors
     /// Returns [`SettingsError`] when a variable is missing or invalid.
     pub fn from_env() -> Result<Self, SettingsError> {
-        let jwt_secret = required("JWT_SECRET")?;
+        let jwt_secret = jwt_secret()?;
         if jwt_secret.expose_secret().len() < MIN_JWT_SECRET_BYTES {
             return Err(SettingsError::Invalid {
                 name: "JWT_SECRET",
@@ -118,6 +118,21 @@ fn required(name: &'static str) -> Result<SecretString, SettingsError> {
     std::env::var(name)
         .map(SecretString::from)
         .map_err(|_| SettingsError::Missing(name))
+}
+
+/// `JWT_SECRET`, or the file named by `JWT_SECRET_FILE` (Docker secret-file convention) when a
+/// container entrypoint generates and persists it at first start. Trailing whitespace is trimmed.
+fn jwt_secret() -> Result<SecretString, SettingsError> {
+    if let Ok(value) = std::env::var("JWT_SECRET") {
+        return Ok(SecretString::from(value));
+    }
+    let path =
+        std::env::var("JWT_SECRET_FILE").map_err(|_| SettingsError::Missing("JWT_SECRET"))?;
+    let contents = std::fs::read_to_string(&path).map_err(|_| SettingsError::Invalid {
+        name: "JWT_SECRET_FILE",
+        reason: "could not read the file it points to",
+    })?;
+    Ok(SecretString::from(contents.trim().to_owned()))
 }
 
 #[cfg(test)]

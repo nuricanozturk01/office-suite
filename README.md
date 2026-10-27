@@ -240,6 +240,22 @@ The spreadsheet formula engine (`spreadsheets-engine-wasm` crate) compiled to **
 
 ## Quick start
 
+### Docker — one command
+
+```sh
+docker run -d -p 8080:8080 -v office-data:/data repo.repsy.io/nuricanozturk/myoffice-docker/office:latest
+```
+
+Open `http://localhost:8080`. Postgres, Redis, the API and the web app all run inside this one
+container; the JWT secret is generated on first start and persisted on the `office-data` volume,
+so it survives restarts. No login needed — the image is public.
+
+This is a quick-start convenience, not how the stack is meant to scale or how it's hardened in
+production (everything running as one root container vs. the distroless/nonroot API + separate
+Postgres/Redis of a real deployment). See `docker/office.Dockerfile`.
+
+### Local development
+
 **Prerequisites:** Rust 1.96 (`rustup`), Node ≥ 24.17, pnpm 12, Docker. `lint`/`typecheck`/`test`/`dev-web` also build a WASM crate — needs the `wasm32-unknown-unknown` target and `wasm-bindgen-cli` 0.2.129 (`rustup target add wasm32-unknown-unknown && cargo install wasm-bindgen-cli --version 0.2.129`).
 
 ```sh

@@ -3,8 +3,10 @@
 .env.*
 **/target
 **/node_modules
-apps/web
-packages
+apps/web/dist
+apps/web/public/apps
+apps/web/.wrangler
+packages/formula-engine/pkg
 docs
 .superpowers
 .claude

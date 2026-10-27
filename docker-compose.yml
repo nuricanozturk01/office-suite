@@ -1,0 +1,62 @@
+# All-in-one local stack: postgres + redis + api + web, built from source.
+#   docker compose up --build
+# Then open http://localhost:8080 — the web container's nginx proxies /api/ to the api
+# container, so everything is same-origin and no CORS setup is needed.
+#
+# First build is slow: docker/web.Dockerfile clones and compiles the four embedded editors
+# (wordcraft/gridcraft/deckcraft/pdfcraft) from their own upstream repos. Repeat builds reuse
+# Docker's layer cache.
+#
+# JWT_SECRET below is a fixed demo value, fine for a local/demo run only. Override it with a
+# real secret (`openssl rand -hex 32`) for anything beyond that: `JWT_SECRET=... docker compose up`.
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: office
+      POSTGRES_PASSWORD: office
+      POSTGRES_DB: office
+    volumes: [pgdata:/var/lib/postgresql]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U office -d office"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    environment:
+      DATABASE_URL: postgres://office:office@postgres:5432/office
+      REDIS_URL: redis://redis:6379
+      API_ADDR: 0.0.0.0:8080
+      JWT_SECRET: ${JWT_SECRET:-35e9b89384c19dff17162facf966e870f71633f83260821a68fb9999472142}
+      COOKIE_SECURE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports: ["8081:8080"] # optional: curl localhost:8081/healthz directly
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    depends_on: [api]
+    ports: ["8080:8080"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
