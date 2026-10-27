@@ -16,6 +16,7 @@ use axum::{
 };
 use std::time::Duration;
 
+use axum::extract::DefaultBodyLimit;
 use platform::{
     background::{EventRuntime, EventRuntimeConfig},
     db,
@@ -30,7 +31,6 @@ use tower_http::{
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
-use axum::extract::DefaultBodyLimit;
 
 async fn healthz() -> Json<Value> {
     Json(json!({ "status": "ok" }))
