@@ -24,7 +24,7 @@ if [ ! -s "$PG_DATA/PG_VERSION" ]; then
     su postgres -c "'$PGBIN/initdb' -D '$PG_DATA' --auth=trust --no-sync"
 fi
 
-su postgres -c "'$PGBIN/pg_ctl' -D '$PG_DATA' -l '$DATA_DIR/postgres.log' -o '-c listen_addresses=127.0.0.1' start"
+su postgres -c "'$PGBIN/pg_ctl' -D '$PG_DATA' -l '$PG_DATA/startup.log' -o '-c listen_addresses=127.0.0.1' start"
 
 until su postgres -c "'$PGBIN/pg_isready' -h 127.0.0.1" >/dev/null 2>&1; do
     sleep 1
